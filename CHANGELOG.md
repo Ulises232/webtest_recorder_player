@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.2] - 2024-05-26
+### Added
+- Directriz en `AGENTS.md` para organizar las vistas en módulos según la acción o caso de uso.
+
 ## [0.1.1] - 2024-05-26
 ### Added
 - Documentación del esquema de la base de datos Branch History en `docs/database_schema.md`.
