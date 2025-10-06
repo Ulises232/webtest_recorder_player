@@ -31,3 +31,4 @@ Estas indicaciones aplican a todo el repositorio.
 - Actualizar los diagramas o documentos de arquitectura cuando se introduzcan nuevas capas o flujos relevantes.
 - Mantener el archivo `CHANGELOG.md` actualizado con cada cambio significativo, siguiendo la convención semántica de versionado acordada para la rama.
 - Documentar en los README o guías de despliegue cualquier dependencia externa adicional que sea necesaria para ejecutar el proyecto.
+- Conservar el documento `docs/database_schema.md` como la referencia oficial del esquema de la base de datos Branch History de ForgeBuild. Cada vez que se modifique la base de datos (creación, eliminación o ajuste de tablas, columnas, índices o restricciones) se debe actualizar dicho archivo para reflejar el estado actual.
