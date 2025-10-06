@@ -6,6 +6,7 @@ Estas indicaciones aplican a todo el repositorio.
 - La arquitectura del proyecto debe seguir el patrón MVC o MTV según corresponda al framework utilizado.
 - Debe existir una separación clara entre **controladores**, **servicios**, **DAOs** y **DTOs**. Los controladores solo coordinan el flujo, los servicios contienen la lógica de negocio y las validaciones, los DAOs encapsulan el acceso a datos y los DTOs se utilizan para transportar información entre capas cuando existan múltiples atributos relacionados.
 - Las vistas no deben contener lógica de validación; cualquier comprobación de datos se realiza en la capa de servicios. Los controladores actúan como puente entre vistas/entradas externas y el núcleo (servicios + DAOs).
+- Al generar nuevas vistas deben organizarse en módulos separados por la acción o caso de uso que atienden, manteniendo una estructura clara y predecible.
 - Para cada tabla o colección de datos debe existir su correspondiente DAO. Cada DAO debe proveer métodos CRUD específicos y evitar exponer directamente detalles de la base de datos al resto de capas.
 - Mantener los servicios libres de llamadas directas al motor de base de datos; siempre interactúan a través de los DAOs.
 
