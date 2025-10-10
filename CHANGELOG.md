@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0] - 2024-05-27
+### Added
+- Script `scripts/manage_environment.py` para crear/actualizar `.venv`, ejecutar pruebas y empaquetar la app en modo dev o prod.
+- Archivo `requirements-dev.txt` con dependencias adicionales para construcción del ejecutable.
+- Guía `docs/dev_prod_setup.md` con los flujos detallados de desarrollo y producción.
+- Script por lotes `generar_ejecutable.bat` para compilar el `.exe` en Windows y aceptar un ícono opcional.
+- Parámetro `--icon` en `manage_environment.py build` para adjuntar un archivo de ícono al ejecutable generado.
+
+### Changed
+- `iniciar_pruebas.bat` ahora usa el script de gestión de entornos para garantizar que la GUI corra dentro de `.venv`.
+- `.gitignore` normalizado para preservar la línea final.
+
 ## [0.2.0] - 2024-05-26
 ### Changed
 - Reestructura completa hacia una arquitectura estilo MVC con controladores, servicios, DAOs, DTOs y vistas independientes.

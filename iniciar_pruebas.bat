@@ -2,42 +2,30 @@
 setlocal
 cd /d "%~dp0"
 
-set GUI_FILE=main.py
+set MANAGE_SCRIPT=scripts\manage_environment.py
+set MANAGE_ARGS=run --mode dev
 
 where py >NUL 2>NUL
 if %ERRORLEVEL%==0 (
-  py -c "import pkgutil,sys; sys.exit(0 if pkgutil.find_loader('ttkbootstrap') else 1)"
-  if %ERRORLEVEL% NEQ 0 (
-    echo Instalando ttkbootstrap...
-    py -m pip install ttkbootstrap
-  )
-  echo Iniciando GUI moderna...
-  py "%GUI_FILE%"
-  if %ERRORLEVEL% NEQ 0 (
-    echo.
-    echo [ERROR] La GUI se cerro con codigo %ERRORLEVEL%.
-    pause
-  )
-  goto :eof
+  py "%MANAGE_SCRIPT%" %MANAGE_ARGS%
+  goto :checkExit
 )
 
 where python >NUL 2>NUL
 if %ERRORLEVEL%==0 (
-  python -c "import pkgutil,sys; sys.exit(0 if pkgutil.find_loader('ttkbootstrap') else 1)"
-  if %ERRORLEVEL% NEQ 0 (
-    echo Instalando ttkbootstrap...
-    python -m pip install ttkbootstrap
-  )
-  echo Iniciando GUI moderna...
-  python "%GUI_FILE%"
-  if %ERRORLEVEL% NEQ 0 (
-    echo.
-    echo [ERROR] La GUI se cerro con codigo %ERRORLEVEL%.
-    pause
-  )
-  goto :eof
+  python "%MANAGE_SCRIPT%" %MANAGE_ARGS%
+  goto :checkExit
 )
 
 echo [ERROR] No se encontro Python en PATH.
 pause
+goto :eof
+
+:checkExit
+if %ERRORLEVEL% NEQ 0 (
+  echo.
+  echo [ERROR] La aplicacion finalizo con codigo %ERRORLEVEL%.
+  pause
+)
+
 endlocal
