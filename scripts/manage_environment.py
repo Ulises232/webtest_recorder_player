@@ -225,7 +225,12 @@ def runTests(pythonExecutable: Path) -> None:
     runCommand([str(pythonExecutable), "-m", "pytest"], "ejecutar las pruebas")
 
 
-def buildExecutable(pythonExecutable: Path, name: str, windowed: bool) -> Path:
+def buildExecutable(
+    pythonExecutable: Path,
+    name: str,
+    windowed: bool,
+    icon: Optional[Path],
+) -> Path:
     """Generate the standalone executable using PyInstaller.
 
     Parameters
@@ -236,6 +241,8 @@ def buildExecutable(pythonExecutable: Path, name: str, windowed: bool) -> Path:
         Name assigned to the generated executable.
     windowed: bool
         When ``True`` the console window is hidden for GUI applications.
+    icon: Optional[Path]
+        Optional icon file used for the generated executable.
 
     Returns
     -------
@@ -264,6 +271,8 @@ def buildExecutable(pythonExecutable: Path, name: str, windowed: bool) -> Path:
     ]
     if windowed:
         command.append("--windowed")
+    if icon is not None:
+        command.extend(["--icon", str(icon)])
     runCommand(command, "generar el ejecutable con PyInstaller")
     executableExtension = ".exe" if os.name == "nt" else ""
     return DIST_DIR / f"{name}{executableExtension}"
@@ -347,6 +356,10 @@ def parseArguments() -> argparse.Namespace:
         action="store_true",
         help="Muestra la consola incluso para aplicaciones graficas.",
     )
+    buildParser.add_argument(
+        "--icon",
+        help="Ruta al archivo de icono para el ejecutable (por ejemplo un .ico).",
+    )
 
     runExeParser = subParsers.add_parser(
         "run-exe",
@@ -382,7 +395,19 @@ def main() -> None:
     elif arguments.command == "test":
         runTests(pythonExecutable)
     elif arguments.command == "build":
-        executablePath = buildExecutable(pythonExecutable, arguments.name, not arguments.console)
+        iconPath: Optional[Path] = None
+        if getattr(arguments, "icon", None):
+            iconPath = Path(arguments.icon).resolve()
+            if not iconPath.is_file():
+                raise EnvironmentCommandError(
+                    f"No se encontro el archivo de icono en {iconPath}."
+                )
+        executablePath = buildExecutable(
+            pythonExecutable,
+            arguments.name,
+            not arguments.console,
+            iconPath,
+        )
         print(f"Ejecutable generado en: {executablePath}")
 
 

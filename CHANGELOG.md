@@ -5,6 +5,8 @@
 - Script `scripts/manage_environment.py` para crear/actualizar `.venv`, ejecutar pruebas y empaquetar la app en modo dev o prod.
 - Archivo `requirements-dev.txt` con dependencias adicionales para construcción del ejecutable.
 - Guía `docs/dev_prod_setup.md` con los flujos detallados de desarrollo y producción.
+- Script por lotes `generar_ejecutable.bat` para compilar el `.exe` en Windows y aceptar un ícono opcional.
+- Parámetro `--icon` en `manage_environment.py build` para adjuntar un archivo de ícono al ejecutable generado.
 
 ### Changed
 - `iniciar_pruebas.bat` ahora usa el script de gestión de entornos para garantizar que la GUI corra dentro de `.venv`.

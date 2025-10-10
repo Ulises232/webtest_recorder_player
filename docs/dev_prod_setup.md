@@ -48,10 +48,14 @@ Esta guía explica cómo preparar el entorno virtual, ejecutar la aplicación en
    ```
    - El ejecutable se genera en la carpeta `dist/`. En Windows se crea el archivo `WebTestRecorder.exe`.
    - Si desea conservar la consola para depurar agregue la bandera `--console`.
-3. Una vez generado el binario puede validarlo con:
+   - Para personalizar el ícono del ejecutable agregue `--icon ruta/al/archivo.ico` (por ejemplo un `.ico` en Windows).
+ 3. Una vez generado el binario puede validarlo con:
    ```bash
    python scripts/manage_environment.py run-exe --path dist/WebTestRecorder.exe
    ```
+
+> En Windows puede utilizar el archivo `generar_ejecutable.bat` para automatizar la construcción desde PowerShell o CMD. El
+> script acepta como argumento opcional la ruta al ícono: `generar_ejecutable.bat ruta\al\icono.ico`.
 
 ## Personalización avanzada
 
