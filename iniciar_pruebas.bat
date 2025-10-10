@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 
-set GUI_FILE=gui_recorder_collect_inputs_modern.py
+set GUI_FILE=main.py
 
 where py >NUL 2>NUL
 if %ERRORLEVEL%==0 (

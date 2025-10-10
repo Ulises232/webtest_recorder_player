@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0] - 2024-05-26
+### Changed
+- Reestructura completa hacia una arquitectura estilo MVC con controladores, servicios, DAOs, DTOs y vistas independientes.
+- Extracción de la lógica de historiales y lanzamiento de Chrome a servicios reutilizables.
+
+### Added
+- Punto de entrada `main.py` y documentación de arquitectura resaltando que se trata de una aplicación de escritorio.
+
 ## [0.1.2] - 2024-05-26
 ### Added
 - Directriz en `AGENTS.md` para organizar las vistas en módulos según la acción o caso de uso.

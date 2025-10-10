@@ -1,26 +1,24 @@
 
-# gui_recorder_collect_inputs_modern.py — v3.2.4
-# Cambios clave:
-#  - Los botones SNAP mantienen la lógica anterior (mss).
-#  - "Importar Confluence" YA NO usa Playwright para abrir el navegador.
-#    * Abre Chrome via subprocess con el perfil "Default".
-#    * Prepara el contenido y lo deja en portapapeles (usando utils.confluence_ui).
-#    * Te pide hacer foco y pega con Ctrl+V (intento automático).
-#
-#  Con esto desaparece el error: "Playwright Sync API inside the asyncio loop".
+"""Main Tkinter view for the desktop recorder desktop application."""
 
-import os, time, json, subprocess, shutil
+import os
+import time
 from pathlib import Path
-import ttkbootstrap as tb
-from ttkbootstrap.constants import *
-from ttkbootstrap.dialogs import Messagebox
 from threading import Thread
 import tkinter as tk
 from tkinter import ttk, messagebox as Messagebox
 
+import ttkbootstrap as tb
+from ttkbootstrap.constants import *
+from ttkbootstrap.dialogs import Messagebox
+
+from app.controllers.main_controller import MainController
+
 # --- helper: enable mouse wheel scrolling on canvas/treeview ---
 def _bind_mousewheel(_widget, _yview_callable):
+    """Enable mouse wheel scrolling on a Tkinter widget."""
     def _on_mousewheel(event):
+        """Auto-generated docstring for `_on_mousewheel`."""
         delta = 0
         if hasattr(event, "num") and event.num in (4, 5):
             delta = -1 if event.num == 4 else 1
@@ -43,46 +41,15 @@ from utils.confluence_ui import import_steps_to_confluence
 from utils.capture_editor import open_capture_editor
 
 
-DEFAULT_URL = "http://localhost:8080/ELLiS/login"
 URLS_FILE = Path("url_history.json")
 CONF_FILE = Path("confluence_history.json")
 SPACES_FILE = Path("confluence_spaces.json")
 
-def load_url_history(file_path: Path, default_item: str):
-    try:
-        if file_path.exists():
-            data = json.loads(file_path.read_text(encoding="utf-8"))
-            if isinstance(data, list) and data:
-                return data
-    except Exception:
-        pass
-    return [default_item]
+controller = MainController()
 
-def save_url_to_history(file_path: Path, url: str, cap: int = 15):
-    url = (url or "").strip()
-    if not url: return
-    data = load_url_history(file_path, url)
-    if any(u.lower() == url.lower() for u in data):
-        pass
-    else:
-            data = [url] + [u for u in data if u.lower() != url.lower()]
-            data = data[:cap]
-            try:
-                file_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-            except Exception:
-                pass
-
-def slugify_for_windows(name: str) -> str:
-    import re
-    name = (name or "").strip()
-    name = re.sub(r'[<>:"/\\|?*\\x00-\\x1F]', '', name)
-    name = re.sub(r'\\s+', '_', name)
-    reserved = {"CON","PRN","AUX","NUL","COM1","COM2","COM3","COM4","COM5","COM6","COM7","COM8","COM9","LPT1","LPT2","LPT3","LPT4","LPT5","LPT6","LPT7","LPT8","LPT9"}
-    if name.upper() in reserved:
-        name = f"_{name}_"
-    return name.rstrip(". ")[:80]
 
 def text_modal(master, title: str):
+    """Display a modal with three multiline text inputs."""
     win = tb.Toplevel(master); win.title(title); win.transient(master); win.grab_set()
     win.resizable(True, True); win.geometry("760x540")
     try: win.minsize(640, 420)
@@ -107,11 +74,13 @@ def text_modal(master, title: str):
     result = {"descripcion":"", "consideraciones":"", "observacion":"", "cancel": False}
 
     def ok():
+        """Auto-generated docstring for `ok`."""
         result["descripcion"] = desc.get("1.0","end").strip()
         result["consideraciones"] = cons.get("1.0","end").strip()
         result["observacion"] = obs.get("1.0","end").strip()
         win.destroy()
     def cancel():
+        """Auto-generated docstring for `cancel`."""
         result["cancel"] = True
         win.destroy()
     tb.Button(btns, text="Cancelar", command=cancel, bootstyle=SECONDARY, width=12).pack(side=RIGHT, padx=6)
@@ -120,6 +89,7 @@ def text_modal(master, title: str):
     win.wait_window(); return result
 
 def select_region_overlay(master, desktop: dict):
+    """Create an overlay that lets the user select a screen region."""
     left = int(desktop.get("left", 0)); top = int(desktop.get("top", 0))
     width = int(desktop.get("width", 0)); height = int(desktop.get("height", 0))
 
@@ -134,9 +104,11 @@ def select_region_overlay(master, desktop: dict):
     state = {"x0": None, "y0": None, "rect": None, "bbox": None}
 
     def on_press(e):
+        """Auto-generated docstring for `on_press`."""
         state["x0"], state["y0"] = e.x, e.y
         if state["rect"]: canvas.delete(state["rect"]); state["rect"] = None
     def on_move(e):
+        """Auto-generated docstring for `on_move`."""
         if state["x0"] is None: return
         x1, y1 = e.x, e.y
         if state["rect"]:
@@ -144,6 +116,7 @@ def select_region_overlay(master, desktop: dict):
         else:
             state["rect"] = canvas.create_rectangle(state["x0"], state["y0"], x1, y1, outline="red", width=3, dash=(4,2))
     def on_release(e):
+        """Auto-generated docstring for `on_release`."""
         if state["x0"] is None: return
         x1, y1 = e.x, e.y; x0, y0 = state["x0"], state["y0"]
         lx, rx = min(x0, x1), max(x0, x1); ty, by = min(y0, y1), max(y0, y1)
@@ -154,29 +127,8 @@ def select_region_overlay(master, desktop: dict):
     tk.Label(ov, text="Arrastra para seleccionar área (Esc para cancelar)", fg="white", bg="black").place(x=10, y=10)
     master.wait_window(ov); return state["bbox"]
 
-def find_chrome_exe():
-    candidates = [
-        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-        shutil.which("chrome"),
-    ]
-    for c in candidates:
-        if c and Path(c).exists():
-            return c
-    return None
-
-def open_chrome_with_profile(url: str, profile_dir: str = "Default"):
-    exe = find_chrome_exe()
-    if not exe:
-        raise RuntimeError("No se encontró chrome.exe")
-    args = [exe, f"--profile-directory={profile_dir}", url]
-    try:
-        subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return True, ""
-    except Exception as e:
-        return False, str(e)
-
 def run_gui():
+    """Render and start the Tkinter interface for the recorder."""
     app = tb.Window(themename="flatly")
     app.title("Pruebas / Evidencias")
     app.geometry("1500x640")
@@ -193,6 +145,7 @@ def run_gui():
     _sidebar_visible = False
 
     def ensure_sidebar_visible():
+        """Auto-generated docstring for `ensure_sidebar_visible`."""
         global _sidebar_visible
         try:
             val = _sidebar_visible
@@ -227,6 +180,7 @@ def run_gui():
     frame_launcher   = tb.Frame(content_area, padding=(16,16))  # dashboard inicial
 
     def _section_title(parent, title, desc=None):
+        """Auto-generated docstring for `_section_title`."""
         tb.Label(parent, text=title, font=("Segoe UI", 16, "bold")).pack(anchor=W, pady=(0,6))
         if desc:
             tb.Label(parent, text=desc, bootstyle=SECONDARY).pack(anchor=W)
@@ -243,6 +197,7 @@ def run_gui():
 
     # === Tarjetas estilo dashboard (accesos rápidos) ===
     def _card(parent, title, subtitle="", icon="📄"):
+        """Auto-generated docstring for `_card`."""
         card = tb.Frame(parent, bootstyle=LIGHT, padding=12)
         card.configure(borderwidth=1)
         row = tb.Frame(card); row.pack(fill=X, expand=YES)
@@ -254,6 +209,7 @@ def run_gui():
         return card
 
     def _cards_grid(parent, items, columns=2, pad=(10,10)):
+        """Auto-generated docstring for `_cards_grid`."""
         grid = tb.Frame(parent); grid.pack(fill=X, expand=YES)
         r, c = 0, 0
         for title, subtitle, icon, cmd in items:
@@ -270,6 +226,7 @@ def run_gui():
 
     # Placeholders
     def _placeholder(parent, title, desc):
+        """Auto-generated docstring for `_placeholder`."""
         _section_title(parent, title, desc)
 
     # === GENERACIÓN AUTOMÁTICA — UI ===
@@ -297,6 +254,7 @@ def run_gui():
     ent_var = tb.Entry(cap, textvariable=_var_name, width=24); ent_var.grid(row=1, column=0, sticky="we", padx=(0,8), pady=(0,8))
     ent_vals = tb.Entry(cap, textvariable=_var_vals, width=50); ent_vals.grid(row=1, column=1, sticky="we", padx=(0,8), pady=(0,8))
     def _add_variable():
+        """Auto-generated docstring for `_add_variable`."""
         name = _var_name.get().strip()
         vals = [v.strip() for v in _var_vals.get().split(",") if v.strip()]
         if not name: messagebox.showwarning("Falta dato", "Debes capturar el nombre de la variable."); return
@@ -311,6 +269,7 @@ def run_gui():
     vars_box = tb.Frame(cap); vars_box.grid(row=2, column=0, columnspan=3, sticky="we")
 
     def _render_variables():
+        """Auto-generated docstring for `_render_variables`."""
         for w in vars_box.winfo_children(): w.destroy()
         if not _variables:
             tb.Label(vars_box, text="(Sin variables)", bootstyle=SECONDARY).pack(anchor="w"); return
@@ -323,12 +282,14 @@ def run_gui():
             tb.Button(row, text="❌ Eliminar", bootstyle=DANGER, command=lambda i=idx: _del_var(i)).pack(side=RIGHT, padx=4)
 
     def _edit_var(i):
+        """Auto-generated docstring for `_edit_var`."""
         var = _variables[i]
         win = tk.Toplevel(app); win.title(f"Editar {var['name']}"); win.geometry("420x200")
         n = tk.StringVar(value=var['name']); v = tk.StringVar(value=", ".join(var['values']))
         tb.Label(win, text="Variable").pack(anchor="w", padx=10, pady=(10,2)); tb.Entry(win, textvariable=n).pack(fill=X, padx=10)
         tb.Label(win, text="Valores (coma)").pack(anchor="w", padx=10, pady=(10,2)); tb.Entry(win, textvariable=v).pack(fill=X, padx=10)
         def _ok():
+            """Auto-generated docstring for `_ok`."""
             name = n.get().strip(); vals = [x.strip() for x in v.get().split(",") if x.strip()]
             if not name or not vals: messagebox.showwarning("Faltan datos","Nombre y valores no pueden quedar vacíos."); return
             if any(j!=i and _variables[j]['name'].lower()==name.lower() for j in range(len(_variables))):
@@ -338,6 +299,7 @@ def run_gui():
         tb.Button(win, text="Cancelar", bootstyle=SECONDARY, command=win.destroy).pack(side=RIGHT, pady=12)
 
     def _del_var(i):
+        """Auto-generated docstring for `_del_var`."""
         if messagebox.askyesno("Confirmar", f"¿Eliminar variable '{_variables[i]['name']}'?"):
             _variables.pop(i); _render_variables()
 
@@ -349,11 +311,13 @@ def run_gui():
     rules_text = tk.Text(_rules, height=4); rules_text.pack(fill=X)
 
     def _default_template():
+        """Auto-generated docstring for `_default_template`."""
         if not _variables: return "Validar el sistema"
         parts = [f"{v['name']} es {{{v['name']}}}" for v in _variables]
         return "Validar el sistema cuando " + ", ".join(parts)
 
     def _parse_rules(text):
+        """Auto-generated docstring for `_parse_rules`."""
         import re; rules = []; lines = [l.strip() for l in text.splitlines() if l.strip()]
         for line in lines:
             if "=>" not in line: continue
@@ -368,7 +332,9 @@ def run_gui():
         return rules
 
     def _evaluate_rules(rules, row_vals, var_order):
+        """Auto-generated docstring for `_evaluate_rules`."""
         def term_value(term):
+            """Auto-generated docstring for `term_value`."""
             try: idx = var_order.index(term['key'])
             except ValueError: return False
             return row_vals[idx] == term['val']
@@ -395,12 +361,14 @@ def run_gui():
     _bind_mousewheel(tree, tree.yview)
 
     def _clear_tree_auto():
+        """Auto-generated docstring for `_clear_tree_auto`."""
         for c in tree['columns']:
             try: tree.heading(c, text="")
             except Exception: pass
         tree.delete(*tree.get_children()); tree['columns'] = ()
 
     def _reset_ga_form(confirm=True):
+        """Auto-generated docstring for `_reset_ga_form`."""
         has_data = bool(_variables or tree.get_children(""))
         if confirm and has_data:
             if not messagebox.askyesno("Nueva matriz", "¿Limpiar la captura y comenzar otra matriz?"): return
@@ -413,6 +381,7 @@ def run_gui():
         except Exception: pass
 
     def _generate_preview():
+        """Auto-generated docstring for `_generate_preview`."""
         missing = []
         if not ga_matrix_name.get().strip(): missing.append("Nombre de la matriz")
         if not _variables: missing.append("Al menos una variable")
@@ -453,10 +422,12 @@ def run_gui():
     tb.Button(save_toolbar, text="Generar otra matriz", bootstyle=SECONDARY, command=lambda: _reset_ga_form(True)).pack(side=LEFT, padx=(8,0))
     tb.Label(save_toolbar, textvariable=ga_status, bootstyle=SECONDARY).pack(side=LEFT, padx=12)
 
-    def _sanitize_filename(name: str)->str:
+    def _sanitize_filename(name: str) -> str:
+        """Auto-generated docstring for `_sanitize_filename`."""
         name = re.sub(r'[\\/:*?"<>|]+', "_", name.strip()); return name
 
     def _save_csv():
+        """Auto-generated docstring for `_save_csv`."""
         rows = [tree.item(ch, 'values') for ch in tree.get_children("")]
         if not rows:
             messagebox.showwarning("Sin datos", "Primero genera la vista previa."); return
@@ -484,10 +455,12 @@ def run_gui():
     gm_case_counter = tk.IntVar(value=1)
     gm_dyncols = []
 
-    def _sanitize_filename(name: str)->str:
+    def _sanitize_filename(name: str) -> str:
+        """Auto-generated docstring for `_sanitize_filename`."""
         name = re.sub(r'[\\/:*?"<>|]+', "_", name.strip()); return name
 
-    def _normalize_header(s: str)->str:
+    def _normalize_header(s: str) -> str:
+        """Auto-generated docstring for `_normalize_header`."""
         s = (s or "").strip().lower()
         for a,b in {"á":"a","é":"e","í":"i","ó":"o","ú":"u","ñ":"n","¿":"", "?":""}.items():
             s = s.replace(a,b)
@@ -499,6 +472,7 @@ def run_gui():
     REQ_FIXED_TAIL = ["¿válido?", "procesar"]
 
     def _headers_ok(headers):
+        """Auto-generated docstring for `_headers_ok`."""
         norm = [_normalize_header(h) for h in headers]
         fixed_norm = [_normalize_header(h) for h in REQ_FIXED_TAIL]
         if REQ_LEFT not in norm: return False, "Falta columna 'NUMERO CASO DE PRUEBA'"
@@ -510,18 +484,21 @@ def run_gui():
         return True, ""
 
     def _split_headers(headers):
+        """Auto-generated docstring for `_split_headers`."""
         norm = [_normalize_header(h) for h in headers]
         li = norm.index(REQ_LEFT); ri = norm.index(REQ_RIGHT)
         left = [headers[li]]; dyn = headers[li+1:ri]; tail = headers[ri:]
         return left, dyn, tail
 
     def _tree_set_columns(tree, headers):
+        """Auto-generated docstring for `_tree_set_columns`."""
         tree['columns'] = headers
         for c in headers:
             try: tree.heading(c, text=c); tree.column(c, width=160, anchor="w")
             except Exception: pass
 
     def _renumber_cases(tree):
+        """Auto-generated docstring for `_renumber_cases`."""
         cols = list(tree['columns'])
         norm = [_normalize_header(h) for h in cols]
         if REQ_LEFT not in norm: return
@@ -533,6 +510,7 @@ def run_gui():
                 tree.item(item, values=vals)
 
     def _read_csv_any_encoding(path):
+        """Auto-generated docstring for `_read_csv_any_encoding`."""
         encs = ["utf-8-sig", "utf-8", "cp1252", "latin-1"]
         last_err = None
         for enc in encs:
@@ -566,6 +544,7 @@ def run_gui():
     # Barra única (evita duplicados)
     gm_toolbar = tb.Frame(frame_gen_manual)
     def _build_toolbar():
+        """Auto-generated docstring for `_build_toolbar`."""
         for w in gm_toolbar.winfo_children(): w.destroy()
         tb.Button(gm_toolbar, text="Guardar CSV", bootstyle=PRIMARY,
                 command=lambda: _save_from_tree(imp_tree if gm_mode.get()=='import' else man_tree)).pack(side=LEFT)
@@ -574,6 +553,7 @@ def run_gui():
     _build_toolbar()
 
     def _save_from_tree(tree):
+        """Auto-generated docstring for `_save_from_tree`."""
         rows = [tree.item(ch, 'values') for ch in tree.get_children("")]
         if not rows:
             messagebox.showwarning("Sin datos", "No hay filas para guardar."); return
@@ -591,6 +571,7 @@ def run_gui():
             messagebox.showerror("Error", f"No se pudo guardar el CSV:\n{ex}")
 
     def _gm_clear_tree(tree):
+        """Auto-generated docstring for `_gm_clear_tree`."""
         if not isinstance(tree, ttk.Treeview): return
         for c in tree['columns']:
             try: tree.heading(c, text="")
@@ -598,6 +579,7 @@ def run_gui():
         tree.delete(*tree.get_children()); tree['columns'] = ()
 
     def _gm_reset_form(confirm=True):
+        """Auto-generated docstring for `_gm_reset_form`."""
         has_rows = False
         try: has_rows = bool(imp_tree.get_children("") or man_tree.get_children(""))
         except Exception: pass
@@ -629,6 +611,7 @@ def run_gui():
     imp_actions = tb.Frame(import_frame)
 
     def _imp_delete_selected():
+        """Auto-generated docstring for `_imp_delete_selected`."""
         sel = imp_tree.selection()
         if not sel: return
         if not messagebox.askyesno("Eliminar", f"¿Eliminar {len(sel)} fila(s) seleccionada(s)?"): return
@@ -636,6 +619,7 @@ def run_gui():
         _renumber_cases(imp_tree); gm_status.set("Fila(s) eliminada(s).")
 
     def _imp_clear_all():
+        """Auto-generated docstring for `_imp_clear_all`."""
         if not imp_tree.get_children(""): return
         if not messagebox.askyesno("Vaciar tabla", "¿Vaciar todas las filas importadas?"): return
         imp_tree.delete(*imp_tree.get_children()); gm_status.set("Tabla vacía.")
@@ -650,6 +634,7 @@ def run_gui():
     _gm_newcol = tk.StringVar(value="")
     tb.Entry(cols_bar, textvariable=_gm_newcol, width=28).pack(side=LEFT)
     def _add_dyncol_and_refresh():
+        """Auto-generated docstring for `_add_dyncol_and_refresh`."""
         name = _gm_newcol.get().strip()
         if not name: return
         if name in gm_dyncols: messagebox.showwarning("Duplicado", f"La columna '{name}' ya existe."); return
@@ -661,6 +646,7 @@ def run_gui():
     chips_holder = tb.Frame(cols_bar); chips_holder.pack(fill=X, pady=(8,0))
 
     def _render_dynchips():
+        """Auto-generated docstring for `_render_dynchips`."""
         for w in chips_holder.winfo_children(): w.destroy()
         if not gm_dyncols:
             tb.Label(chips_holder, text="(Sin columnas dinámicas)", bootstyle=SECONDARY).pack(anchor="w"); return
@@ -668,7 +654,9 @@ def run_gui():
             chip = tb.Frame(chips_holder, bootstyle=SECONDARY); chip.pack(side=LEFT, padx=4)
             tb.Label(chip, text=col).pack(side=LEFT, padx=(6,2), pady=2)
             def _make_cmd(name=col):
+                """Auto-generated docstring for `_make_cmd`."""
                 def _cmd():
+                    """Auto-generated docstring for `_cmd`."""
                     if man_tree.get_children(""):
                         if not messagebox.askyesno("Eliminar columna", f"Hay filas capturadas.\n¿Eliminar la columna '{name}' y ajustar la tabla?"): return
                     old = list(gm_dyncols); new_dyn = [c for c in old if c != name]
@@ -695,11 +683,13 @@ def run_gui():
 
     inner = tb.Frame(canvas); inner_id = canvas.create_window((0,0), window=inner, anchor="nw")
     def _on_inner_config(event):
+        """Auto-generated docstring for `_on_inner_config`."""
         canvas.configure(scrollregion=canvas.bbox("all"))
         try: canvas.itemconfig(inner_id, width=canvas.winfo_width())
         except Exception: pass
     inner.bind("<Configure>", _on_inner_config)
     def _on_canvas_config(event):
+        """Auto-generated docstring for `_on_canvas_config`."""
         try: canvas.itemconfig(inner_id, width=event.width)
         except Exception: pass
     canvas.bind("<Configure>", _on_canvas_config)
@@ -715,10 +705,12 @@ def run_gui():
     man_actions = tb.Frame(manual_frame)
 
     def _man_build_tree_headers():
+        """Auto-generated docstring for `_man_build_tree_headers`."""
         headers = ["NUMERO CASO DE PRUEBA", *gm_dyncols, "Caso de prueba", "¿Válido?", "PROCESAR"]
         man_tree.delete(*man_tree.get_children()); _tree_set_columns(man_tree, headers)
 
     def _rebuild_manual_inputs():
+        """Auto-generated docstring for `_rebuild_manual_inputs`."""
         for w in inner.winfo_children(): w.destroy()
         row = 0
         tb.Label(inner, text="NUMERO CASO DE PRUEBA").grid(row=row, column=0, sticky="w", padx=(0,8), pady=4)
@@ -730,6 +722,7 @@ def run_gui():
         sb.grid(row=row, column=3, sticky="w")
         # Botón superior agregar fila (visible)
         def _add_row():
+            """Auto-generated docstring for `_add_row`."""
             missing = [c for c in gm_dyncols if not col_vars[c].get().strip()]
             if not case_txt.get().strip(): missing.append("Caso de prueba")
             if missing: messagebox.showwarning("Faltan datos", "Completa: " + ", ".join(missing)); return
@@ -761,6 +754,7 @@ def run_gui():
 
         for w in btns.winfo_children(): w.destroy()
         def _clear_inputs():
+            """Auto-generated docstring for `_clear_inputs`."""
             for c in gm_dyncols:
                 try: col_vars[c].set("")
                 except Exception: pass
@@ -769,11 +763,13 @@ def run_gui():
         tb.Button(btns, text="Limpiar entradas", bootstyle=SECONDARY, command=_clear_inputs).pack(side=LEFT, padx=(8,0))
 
     def _browse_import():
+        """Auto-generated docstring for `_browse_import`."""
         path = filedialog.askopenfilename(filetypes=[("CSV o Excel","*.csv *.xlsx *.xls"),("Todos","*.*")])
         if not path: return
         imp_path.set(path); _load_import(path)
 
     def _load_import(path):
+        """Auto-generated docstring for `_load_import`."""
         ext = os.path.splitext(path)[1].lower()
         rows = []; headers = []
         try:
@@ -810,6 +806,7 @@ def run_gui():
         gm_status.set(f"Archivo cargado. Columnas dinámicas: {', '.join(dyn) if dyn else '(ninguna)'}")
 
     def _man_edit_selected():
+        """Auto-generated docstring for `_man_edit_selected`."""
         sel = man_tree.selection()
         if not sel: messagebox.showinfo("Editar", "Selecciona una fila para editar."); return
         item = sel[0]; values = list(man_tree.item(item, 'values'))
@@ -820,11 +817,13 @@ def run_gui():
             fr = tb.Frame(win); fr.pack(fill=X, padx=10, pady=4)
             tb.Label(fr, text=h, width=24).pack(side=LEFT); tb.Entry(fr, textvariable=v).pack(side=LEFT, fill=X, expand=True)
         def _ok():
+            """Auto-generated docstring for `_ok`."""
             new_vals = [v.get() for _,v in vars_map]; man_tree.item(item, values=new_vals); win.destroy()
         tb.Button(win, text="Guardar", bootstyle=PRIMARY, command=_ok).pack(side=RIGHT, padx=10, pady=10)
         tb.Button(win, text="Cancelar", bootstyle=SECONDARY, command=win.destroy).pack(side=RIGHT, pady=10)
 
     def _man_delete_selected():
+        """Auto-generated docstring for `_man_delete_selected`."""
         sel = man_tree.selection()
         if not sel: return
         if not messagebox.askyesno("Eliminar", f"¿Eliminar {len(sel)} fila(s)?"): return
@@ -832,6 +831,7 @@ def run_gui():
         _renumber_cases(man_tree)
 
     def _man_clear_all():
+        """Auto-generated docstring for `_man_clear_all`."""
         if not man_tree.get_children(""): return
         if not messagebox.askyesno("Vaciar tabla", "¿Vaciar todas las filas capturadas?"): return
         man_tree.delete(*man_tree.get_children()); gm_case_counter.set(1)
@@ -843,6 +843,7 @@ def run_gui():
     tb.Button(man_actions, text="Vaciar tabla", bootstyle=SECONDARY, command=_man_clear_all).pack(side=LEFT, padx=(8,0))
 
     def _show_mode():
+        """Auto-generated docstring for `_show_mode`."""
         try:
             status_lbl.pack_forget()
             top.pack_forget(); gm_toolbar.pack_forget()
@@ -872,6 +873,7 @@ def run_gui():
             _man_build_tree_headers(); _rebuild_manual_inputs(); _render_dynchips()
 
     def _load_dyncols_from_template():
+        """Auto-generated docstring for `_load_dyncols_from_template`."""
         path = filedialog.askopenfilename(filetypes=[("CSV","*.csv")])
         if not path: return
         try:
@@ -911,6 +913,7 @@ def run_gui():
     # === SIDEBAR DERECHA: icono + texto ===
     nav_buttons = {}
     def _nav_item(parent, icon, label, sid):
+        """Auto-generated docstring for `_nav_item`."""
         wrapper = tb.Frame(parent, padding=(0,0))
         wrapper.pack(fill=X, pady=4)
         # Sin 'anchor' (ttk no soporta 'anchor')
@@ -945,10 +948,12 @@ def run_gui():
     }
 
     def _highlight_nav(section_id):
+        """Auto-generated docstring for `_highlight_nav`."""
         for sid, b in nav_buttons.items():
             b.configure(bootstyle=PRIMARY if sid == section_id else SECONDARY)
 
     def show_section(section_id: str):
+        """Auto-generated docstring for `show_section`."""
         for fr in all_frames.values():
             fr.pack_forget()
         all_frames.get(section_id, frame_pruebas).pack(fill=BOTH, expand=YES)
@@ -962,7 +967,8 @@ def run_gui():
         except Exception:
             pass
 
-    def go_section(section_id: str, from_launcher: bool=False):
+    def go_section(section_id: str, from_launcher: bool = False):
+        """Auto-generated docstring for `go_section`."""
         # Si el destino es INICIO, ocultar siempre el sidebar
         if section_id == "LAUNCHER":
             hide_sidebar()
@@ -987,8 +993,8 @@ def run_gui():
     base_var = tb.StringVar(value="reporte"); tb.Entry(card1, textvariable=base_var).grid(row=0, column=1, sticky=EW, padx=(10,0))
 
     tb.Label(card1, text="URL inicial").grid(row=2, column=0, sticky=W, pady=(10,2))
-    urls = load_url_history(URLS_FILE, DEFAULT_URL)
-    url_var = tb.StringVar(value=urls[0] if urls else DEFAULT_URL)
+    urls = controller.load_history(URLS_FILE, controller.DEFAULT_URL)
+    url_var = tb.StringVar(value=urls[0] if urls else controller.DEFAULT_URL)
     tb.Combobox(card1, textvariable=url_var, values=urls, width=56, bootstyle="light").grid(row=2, column=1, sticky=EW, pady=(10,2))
 
     card2 = tb.Labelframe(body, text="Salidas", bootstyle=SECONDARY, padding=12)
@@ -1001,15 +1007,17 @@ def run_gui():
     ev_var = tb.StringVar(); tb.Entry(card2, textvariable=ev_var).grid(row=1, column=1, sticky=EW, padx=(10,0) , pady=(2,2))
 
     def refresh_paths(*_):
-        base = slugify_for_windows(base_var.get() or "reporte")
+        """Auto-generated docstring for `refresh_paths`."""
+        base = controller.slugify_for_windows(base_var.get() or "reporte")
         final = f"{base}"
         doc_var.set(str(Path("sessions")/f"{final}.docx"))
         ev_var.set(str(Path("evidencia")/final))
     base_var.trace_add("write", refresh_paths); refresh_paths()
 
-    prev_base = {"val": slugify_for_windows(base_var.get() or "reporte")}
+    prev_base = {"val": controller.slugify_for_windows(base_var.get() or "reporte")}
     def _on_base_change(*_):
-        new_base = slugify_for_windows(base_var.get() or "reporte")
+        """Auto-generated docstring for `_on_base_change`."""
+        new_base = controller.slugify_for_windows(base_var.get() or "reporte")
         old_base = prev_base["val"]
         if not old_base or new_base == old_base:
             return
@@ -1032,6 +1040,7 @@ def run_gui():
     _monitor_index = {"val": None}
 
     def ensure_mss():
+        """Auto-generated docstring for `ensure_mss`."""
         try:
             import mss, mss.tools
             return True
@@ -1040,6 +1049,7 @@ def run_gui():
             return False
 
     def select_monitor_modal(master, monitors):
+        """Auto-generated docstring for `select_monitor_modal`."""
         win = tb.Toplevel(master); win.title("Seleccionar monitor"); win.transient(master); win.grab_set()
         frm = tb.Frame(win, padding=15); frm.pack(fill=BOTH, expand=YES)
         tb.Label(frm, text="Elige el monitor", font=("Segoe UI", 12, "bold")).pack(anchor=W, pady=(0,8))
@@ -1051,13 +1061,18 @@ def run_gui():
         sel = tb.Combobox(frm, values=options, state="readonly", width=60); sel.pack(fill=X); sel.current(1 if len(monitors) > 1 else 0)
         res = {"index": sel.current()}
         btns = tb.Frame(frm); btns.pack(fill=X, pady=(10,0))
-        def ok(): res["index"] = sel.current(); win.destroy()
-        def cancel(): res["index"] = None; win.destroy()
+        def ok():
+            """Auto-generated docstring for `ok`."""
+            res["index"] = sel.current(); win.destroy()
+        def cancel():
+            """Auto-generated docstring for `cancel`."""
+            res["index"] = None; win.destroy()
         tb.Button(btns, text="Cancelar", command=cancel, bootstyle=SECONDARY).pack(side=RIGHT, padx=6)
         tb.Button(btns, text="Aceptar", command=ok, bootstyle=PRIMARY).pack(side=RIGHT)
         win.wait_window(); return res["index"]
 
     def select_monitor(sct):
+        """Auto-generated docstring for `select_monitor`."""
         monitors = sct.monitors
         if not monitors:
             Messagebox.show_error("No se detectaron monitores.", "SNAP"); return None, None
@@ -1069,6 +1084,7 @@ def run_gui():
         return monitors, idx
 
     def snap_externo_monitor():
+        """Auto-generated docstring for `snap_externo_monitor`."""
         if not ensure_mss(): return
         import mss, mss.tools
         with mss.mss() as sct:
@@ -1112,6 +1128,7 @@ def run_gui():
 
 
     def snap_region_all():
+        """Auto-generated docstring for `snap_region_all`."""
         if not ensure_mss(): return
         import mss, mss.tools
         with mss.mss() as sct:
@@ -1157,6 +1174,7 @@ def run_gui():
             pass
 
     def generar_doc():
+        """Auto-generated docstring for `generar_doc`."""
         if not session["steps"]:
             if not Messagebox.askyesno("Reporte","No hay pasos. ¿Generar documento vacío?"): return
         outp = Path(doc_var.get()); outp.parent.mkdir(parents=True, exist_ok=True)
@@ -1165,31 +1183,37 @@ def run_gui():
         btn_limpiar.configure(state="normal")
 
     def modal_confluence_url():
+        """Auto-generated docstring for `modal_confluence_url`."""
         win = tb.Toplevel(app); win.title("Importar a Confluence"); win.transient(app); win.grab_set(); win.geometry("800x300")
         frm = tb.Frame(win, padding=15); frm.pack(fill=BOTH, expand=YES)
         tb.Label(frm, text="URL de la página de Confluence", font=("Segoe UI", 11, "bold")).pack(anchor=W, pady=(0,8))
 
         tb.Label(frm, text="ENTORNO", font=("Segoe UI", 11, "bold")).pack(anchor=W, pady=(10,2))
-        hist = load_url_history(CONF_FILE, "https://sistemaspremium.atlassian.net/wiki/spaces/")
+        hist = controller.load_history(CONF_FILE, controller.CONF_DEFAULT)
         urlv = tb.StringVar(value=hist[0] if hist else "")
         cmb = tb.Combobox(frm, textvariable=urlv, values=hist, width=70, bootstyle="light"); cmb.pack(fill=X)
         cmb.icursor("end")
 
         tb.Label(frm, text="ESPACIO", font=("Segoe UI", 11, "bold")).pack(anchor=W, pady=(10,2))
-        histspaces = load_url_history(SPACES_FILE, "")
+        histspaces = controller.load_history(SPACES_FILE, "")
         urlvspaces = tb.StringVar(value=histspaces[0] if histspaces else "")
         cmbspaces = tb.Combobox(frm, textvariable=urlvspaces, values=histspaces, width=70, bootstyle="light"); cmbspaces.pack(fill=X)
         cmbspaces.icursor("end")
         
         res = {"url": None}
         btns = tb.Frame(frm); btns.pack(fill=X, pady=(12,0))
-        def ok(): res["url"] = ((urlv.get() + urlvspaces.get())  or "").strip(); win.destroy()
-        def cancel(): res["url"] = None; win.destroy()
+        def ok():
+            """Auto-generated docstring for `ok`."""
+            res["url"] = ((urlv.get() + urlvspaces.get())  or "").strip(); win.destroy()
+        def cancel():
+            """Auto-generated docstring for `cancel`."""
+            res["url"] = None; win.destroy()
         tb.Button(btns, text="Cancelar", command=cancel, bootstyle=SECONDARY).pack(side=RIGHT, padx=6)
         tb.Button(btns, text="Aceptar", command=ok, bootstyle=PRIMARY).pack(side=RIGHT)
         win.wait_window(); return res["url"]
 
     def importar_confluence():
+        """Auto-generated docstring for `importar_confluence`."""
         if not session["steps"]:
             Messagebox.showwarning( "Confluence" , "No hay pasos en la sesión."); return
         outp = Path(doc_var.get()); outp.parent.mkdir(parents=True, exist_ok=True)
@@ -1198,11 +1222,11 @@ def run_gui():
 
         url_c = modal_confluence_url()
         if not url_c: return
-        save_url_to_history(CONF_FILE, url_c)
+        controller.register_history_value(CONF_FILE, url_c)
 
         status.set("⏳ Preparando contenido y abriendo Confluence...")
-        open_chrome_with_profile(url_c, "Default")
-        log_path = Path("sessions") / f"{session.get("title")}_confluence.log"
+        controller.open_chrome_with_profile(url_c, "Default")
+        log_path = Path("sessions") / f"{session.get('title')}_confluence.log"
 
         Messagebox.showinfo(
             "Confluence",
@@ -1225,12 +1249,8 @@ def run_gui():
             pass
     btns = tb.Frame(frame_pruebas, padding=(16,6)); btns.pack(fill=X)
     # --- Helpers de limpieza y selección ---
-    def _clear_evidence_for(base_name:str, also_clear_session:bool=True):
-        """
-        MODO GUI-ONLY: No elimina archivos en disco.
-        Limpia únicamente el estado en memoria (historial/steps) y la vista.
-        Conserva siempre las capturas y metadatos en evidencia/<base>.
-        """
+    def _clear_evidence_for(base_name: str, also_clear_session: bool = True):
+        """Limpiar solo el estado en memoria manteniendo evidencias en disco."""
         removed = False  # ya no se elimina nada en disco
         if also_clear_session:
             try: session["steps"].clear()
@@ -1240,20 +1260,23 @@ def run_gui():
         return removed
 
     def reset_monitor_selection():
+        """Auto-generated docstring for `reset_monitor_selection`."""
         _monitor_index["val"] = None
         Messagebox.showinfo("SNAP Externo","La próxima captura externa te pedirá la pantalla nuevamente.")
 
     def limpiar_cache():
+        """Auto-generated docstring for `limpiar_cache`."""
         # Si aún no se ha guardado (DONE o Importar Confluence), pedir confirmación
         if not session_saved["val"]:
             if not Messagebox.askyesno("Aún no has guardado con DONE ni Importar Confluence.¿Deseas limpiar SOLO el historial en la GUI de todas formas?(No se borrarán archivos de evidencia.)","Limpiar caché (solo GUI)"):return
 
-        base = slugify_for_windows(base_var.get() or "reporte")
+        base = controller.slugify_for_windows(base_var.get() or "reporte")
         _clear_evidence_for(base, also_clear_session=True)
         status.set("🧹 Caché limpiado en la GUI. Las evidencias en disco se mantienen intactas.")
     def abrir_nav():
-        url = (url_var.get() or DEFAULT_URL).strip() or DEFAULT_URL
-        ok, msg = open_chrome_with_profile(url, "Default")
+        """Auto-generated docstring for `abrir_nav`."""
+        url = (url_var.get() or controller.DEFAULT_URL).strip() or controller.DEFAULT_URL
+        ok, msg = controller.open_chrome_with_profile(url, "Default")
         if ok: status.set("✅ Chrome abierto (perfil Default)")
         else: Messagebox.show_error(f"No se pudo abrir Chrome: {msg}", "Navegador")
 
@@ -1264,6 +1287,7 @@ def run_gui():
 
     ask_always = tk.BooleanVar(value=False)
     def _ask_switch():
+        """Auto-generated docstring for `_ask_switch`."""
         if ask_always.get(): _monitor_index["val"] = None
     tb.Checkbutton(btns, text="Preguntar pantalla cada vez", variable=ask_always, bootstyle="round-toggle", command=_ask_switch).pack(side=LEFT, padx=8)
     tb.Button(btns, text="📥 Importar Confluence", command=importar_confluence, bootstyle=SUCCESS, width=22).pack(side=LEFT, padx=8)
