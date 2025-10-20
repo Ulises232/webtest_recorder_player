@@ -1,9 +1,13 @@
 """Controller coordinating the desktop view with domain services."""
 
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
+from app.daos.database import DatabaseConnector
 from app.daos.history_dao import FileHistoryDAO
+from app.daos.user_dao import UserDAO
+from app.dtos.auth_result import AuthenticationResult, AuthenticationStatus
+from app.services.auth_service import AuthService
 from app.services.browser_service import BrowserService
 from app.services.history_service import HistoryService
 from app.services.naming_service import NamingService
@@ -20,6 +24,9 @@ class MainController:
         self._history_services: Dict[Path, HistoryService] = {}
         self._browser_service = BrowserService()
         self._naming_service = NamingService()
+        user_dao = UserDAO(DatabaseConnector().connection_factory())
+        self._auth_service = AuthService(user_dao)
+        self._authenticated_user: Optional[AuthenticationResult] = None
 
     def _get_history_service(self, file_path: Path) -> HistoryService:
         """Lazy-load the history service associated to a specific file."""
@@ -42,3 +49,14 @@ class MainController:
     def slugify_for_windows(self, name: str) -> str:
         """Expose the naming helper for view usage."""
         return self._naming_service.slugify_for_windows(name)
+
+    def authenticate_user(self, username: str, password: str) -> AuthenticationResult:
+        """Validate a login request and cache the authenticated user."""
+        result = self._auth_service.authenticate(username, password)
+        if result.status == AuthenticationStatus.AUTHENTICATED:
+            self._authenticated_user = result
+        return result
+
+    def get_authenticated_user(self) -> Optional[AuthenticationResult]:
+        """Return the cached authenticated user, if any."""
+        return self._authenticated_user

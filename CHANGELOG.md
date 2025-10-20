@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.0] - 2024-05-28
+### Added
+- Pantalla de inicio de sesión que valida credenciales contra la tabla `dbo.users` con hashes PBKDF2.
+- Servicio, DAO y DTO dedicados para autenticación reutilizando la arquitectura MVC existente.
+- Dependencia `pyodbc` para conectarse a SQL Server mediante la cadena `SQLSERVER_CONNECTION_STRING`.
+
 ## [0.3.0] - 2024-05-27
 ### Added
 - Script `scripts/manage_environment.py` para crear/actualizar `.venv`, ejecutar pruebas y empaquetar la app en modo dev o prod.

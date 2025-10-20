@@ -5,6 +5,7 @@ import os
 import time
 from pathlib import Path
 from threading import Thread
+from typing import Optional
 import tkinter as tk
 from tkinter import ttk, messagebox as Messagebox
 
@@ -13,6 +14,7 @@ from ttkbootstrap.constants import *
 from ttkbootstrap.dialogs import Messagebox
 
 from app.controllers.main_controller import MainController
+from app.dtos.auth_result import AuthenticationResult, AuthenticationStatus
 
 # --- helper: enable mouse wheel scrolling on canvas/treeview ---
 def _bind_mousewheel(_widget, _yview_callable):
@@ -46,6 +48,102 @@ CONF_FILE = Path("confluence_history.json")
 SPACES_FILE = Path("confluence_spaces.json")
 
 controller = MainController()
+
+
+def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
+    """Show a modal login dialog and return the authenticated user if any."""
+
+    dialog = tb.Toplevel(root)
+    dialog.title("Iniciar sesión")
+    dialog.transient(root)
+    dialog.grab_set()
+    dialog.resizable(False, False)
+    dialog.geometry("360x220")
+
+    container = tb.Frame(dialog, padding=20)
+    container.pack(fill=BOTH, expand=YES)
+
+    tb.Label(container, text="Ingrese sus credenciales", font=("Segoe UI", 12, "bold")).pack(anchor=W, pady=(0, 12))
+
+    username_var = tk.StringVar()
+    password_var = tk.StringVar()
+    status_var = tk.StringVar()
+
+    tb.Label(container, text="Usuario", font=("Segoe UI", 10, "bold")).pack(anchor=W)
+    username_entry = tb.Entry(container, textvariable=username_var)
+    username_entry.pack(fill=X, pady=(0, 10))
+
+    tb.Label(container, text="Contraseña", font=("Segoe UI", 10, "bold")).pack(anchor=W)
+    password_entry = tb.Entry(container, textvariable=password_var, show="•")
+    password_entry.pack(fill=X, pady=(0, 10))
+
+    tb.Label(container, textvariable=status_var, bootstyle=WARNING).pack(anchor=W, pady=(0, 10))
+
+    result: dict[str, Optional[AuthenticationResult]] = {"auth": None}
+
+    def submit(_event=None):
+        """Trigger the authentication flow using the typed credentials."""
+
+        username = username_var.get().strip()
+        password = password_var.get()
+        if not username or not password:
+            status_var.set("Capture usuario y contraseña para continuar.")
+            return
+
+        auth_result = controller.authenticate_user(username, password)
+        status = auth_result.status
+        if status == AuthenticationStatus.AUTHENTICATED:
+            result["auth"] = auth_result
+            dialog.destroy()
+            return
+
+        password_var.set("")
+        if status == AuthenticationStatus.RESET_REQUIRED:
+            Messagebox.show_error(
+                "Debes actualizar la contraseña en el sistema principal antes de usar esta aplicación.",
+                "Cambio de contraseña requerido",
+            )
+            status_var.set("Actualiza tu contraseña en el sistema principal.")
+            return
+
+        if status == AuthenticationStatus.PASSWORD_REQUIRED:
+            Messagebox.show_error(
+                "El usuario no tiene contraseña definida. Ingresa al sistema principal para establecerla.",
+                "Contraseña requerida",
+            )
+            status_var.set("Define una contraseña en el sistema principal y vuelve a intentar.")
+            return
+
+        if status == AuthenticationStatus.INACTIVE:
+            Messagebox.show_error(auth_result.message, "Usuario inactivo")
+            status_var.set("La cuenta está desactivada.")
+            return
+
+        if status == AuthenticationStatus.ERROR:
+            Messagebox.show_error(auth_result.message, "Error al iniciar sesión")
+            status_var.set("Revisa la conexión a la base de datos e intenta nuevamente.")
+            return
+
+        status_var.set("Usuario o contraseña inválidos.")
+
+    def cancel() -> None:
+        """Close the dialog without authenticating."""
+
+        result["auth"] = None
+        dialog.destroy()
+
+    btn_row = tb.Frame(container)
+    btn_row.pack(fill=X)
+
+    tb.Button(btn_row, text="Cancelar", command=cancel, bootstyle=SECONDARY).pack(side=RIGHT, padx=(6, 0))
+    tb.Button(btn_row, text="Iniciar sesión", command=submit, bootstyle=PRIMARY).pack(side=RIGHT)
+
+    dialog.bind("<Return>", submit)
+    dialog.protocol("WM_DELETE_WINDOW", cancel)
+    username_entry.focus_set()
+
+    root.wait_window(dialog)
+    return result["auth"]
 
 
 def text_modal(master, title: str):
@@ -130,8 +228,17 @@ def select_region_overlay(master, desktop: dict):
 def run_gui():
     """Render and start the Tkinter interface for the recorder."""
     app = tb.Window(themename="flatly")
-    app.title("Pruebas / Evidencias")
+    app.withdraw()
+
+    auth_result = _prompt_login(app)
+    if not auth_result:
+        app.destroy()
+        return
+
+    display_name = auth_result.displayName or auth_result.username or "Usuario"
+    app.title(f"Pruebas / Evidencias - {display_name}")
     app.geometry("1500x640")
+    app.deiconify()
 
     # === Contenedor principal: CONTENIDO IZQ + SIDEBAR DER ===
     container = tb.Frame(app); container.pack(fill=BOTH, expand=YES)
@@ -142,6 +249,19 @@ def run_gui():
     # --- SIDEBAR (oculto al inicio) — icono + texto, a la DERECHA ---
     sidebar = tb.Frame(container, padding=(8,8), width=220)
     sidebar.pack_propagate(False)  # aún no se empaqueta; aparecerá después del primer click
+
+    session_info = controller.get_authenticated_user()
+    if session_info:
+        tb.Label(
+            sidebar,
+            text="Sesión activa",
+            font=("Segoe UI", 11, "bold"),
+        ).pack(anchor=W, pady=(0, 4))
+        tb.Label(
+            sidebar,
+            text=session_info.displayName or session_info.username,
+            wraplength=180,
+        ).pack(anchor=W, pady=(0, 12))
     _sidebar_visible = False
 
     def ensure_sidebar_visible():
