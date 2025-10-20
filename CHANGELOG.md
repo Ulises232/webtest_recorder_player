@@ -1,6 +1,9 @@
 # Changelog
 
 ## [0.4.0] - 2024-05-28
+### Changed
+- `iniciar_pruebas.bat` ahora crea `.venv` y sincroniza `requirements-dev.txt` antes de lanzar la aplicacion para evitar faltantes como `pyodbc`.
+
 ### Added
 - Pantalla de inicio de sesión que valida credenciales contra la tabla `dbo.users` con hashes PBKDF2.
 - Servicio, DAO y DTO dedicados para autenticación reutilizando la arquitectura MVC existente.
