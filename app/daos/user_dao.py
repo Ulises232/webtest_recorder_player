@@ -1,10 +1,12 @@
 """Data access object for reading user records from SQL Server."""
 
+import importlib
 from contextlib import closing
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional, Tuple, Type
 
-import pyodbc
+if TYPE_CHECKING:  # pragma: no cover - solo para tipado
+    import pyodbc
 
 from app.daos.database import DatabaseConnectorError
 
@@ -30,12 +32,20 @@ class UserDAOError(RuntimeError):
 class UserDAO:
     """Retrieve users from SQL Server using a provided connection factory."""
 
-    def __init__(self, connection_factory: Callable[[], pyodbc.Connection]) -> None:
+    def __init__(self, connection_factory: Callable[[], "pyodbc.Connection"]) -> None:
         """Store the connection factory for later usage."""
         self._connection_factory = connection_factory
 
     def get_by_username(self, username: str) -> Optional[UserRecord]:
         """Return the user associated to the username or ``None`` if missing."""
+        error_types: Tuple[Type[BaseException], ...] = (DatabaseConnectorError,)
+        try:
+            pyodbc = importlib.import_module("pyodbc")
+        except ModuleNotFoundError:
+            pyodbc = None
+        else:
+            error_types = (DatabaseConnectorError, pyodbc.Error)
+
         try:
             with closing(self._connection_factory()) as connection:
                 with closing(connection.cursor()) as cursor:
@@ -48,7 +58,7 @@ class UserDAO:
                         username,
                     )
                     row = cursor.fetchone()
-        except (pyodbc.Error, DatabaseConnectorError) as exc:  # pragma: no cover - depende del entorno
+        except error_types as exc:  # pragma: no cover - depende del entorno
             raise UserDAOError("No fue posible consultar el usuario en la base de datos.") from exc
 
         if not row:

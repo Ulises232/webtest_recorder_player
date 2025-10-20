@@ -6,6 +6,9 @@
 - Servicio, DAO y DTO dedicados para autenticación reutilizando la arquitectura MVC existente.
 - Dependencia `pyodbc` para conectarse a SQL Server mediante la cadena `SQLSERVER_CONNECTION_STRING`.
 
+### Fixed
+- Carga diferida de `pyodbc` para evitar errores al iniciar la aplicación cuando la dependencia aún no está instalada.
+
 ## [0.3.0] - 2024-05-27
 ### Added
 - Script `scripts/manage_environment.py` para crear/actualizar `.venv`, ejecutar pruebas y empaquetar la app en modo dev o prod.
