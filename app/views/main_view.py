@@ -58,7 +58,7 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
     dialog = tb.Toplevel(root)
     dialog.title("Iniciar sesión")
     dialog.resizable(False, False)
-    dialog.transient(root)
+    dialog.geometry("380x260")
     dialog.attributes("-topmost", True)
 
     container = tb.Frame(dialog, padding=20)
@@ -109,8 +109,8 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
         """Ensure the dialog keeps a minimum size after layout updates."""
 
         dialog.update_idletasks()
-        required_width = max(440, dialog.winfo_reqwidth())
-        required_height = max(340, dialog.winfo_reqheight())
+        required_width = max(380, dialog.winfo_reqwidth())
+        required_height = max(260, dialog.winfo_reqheight())
         dialog.minsize(required_width, required_height)
         screen_width = dialog.winfo_screenwidth()
         screen_height = dialog.winfo_screenheight()

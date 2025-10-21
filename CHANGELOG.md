@@ -18,6 +18,7 @@
 - La ventana de inicio de sesión aparece de inmediato y carga el listado de usuarios activos en segundo plano para no bloquear la interfaz cuando SQL Server no responde.
 - La carga en segundo plano del listado de usuarios ahora evita invocar Tkinter desde hilos secundarios, eliminando el error `RuntimeError: main thread is not in main loop`.
 - El cuadro de inicio de sesión se centra automáticamente y se asegura de mostrarse aunque la ventana principal permanezca oculta.
+- Se restableció la geometría base del cuadro de inicio de sesión a `380x260` y se eliminó el modo `transient` para que vuelva a mostrarse correctamente.
 
 ## [0.3.0] - 2024-05-27
 ### Added
