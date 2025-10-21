@@ -1,10 +1,5 @@
 # Changelog
 
-## [0.5.1] - 2024-05-30
-### Changed
-- Los reportes de sesiones y la evidencia capturada se guardan ahora en `%APPDATA%\WebRecord` para separar la configuración del código fuente.
-- El caché de credenciales continúa ubicándose en `%APPDATA%\ForgeBuild\login_cache.json` para conservar la compatibilidad con la herramienta hermana.
-
 ## [0.5.0] - 2024-05-29
 ### Added
 - Tabla `dbo.history_entries` documentada en `docs/database_schema.md` para centralizar los historiales de la aplicación.
