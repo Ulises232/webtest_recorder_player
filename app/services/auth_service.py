@@ -4,9 +4,9 @@ import base64
 import binascii
 import hashlib
 import hmac
-from typing import Optional
+from typing import List, Optional
 
-from app.daos.user_dao import UserDAO, UserDAOError
+from app.daos.user_dao import UserDAO, UserDAOError, UserRecord
 from app.dtos.auth_result import AuthenticationResult, AuthenticationStatus
 
 
@@ -81,6 +81,11 @@ class AuthService:
             username=record.username,
             displayName=record.displayName,
         )
+
+    def list_active_users(self) -> List[UserRecord]:
+        """Retrieve the set of active users allowed to access the application."""
+
+        return self._user_dao.list_active_users()
 
     def _parse_iterations(self, password_algo: Optional[str]) -> int:
         """Parse the iteration count encoded in the password algorithm string."""

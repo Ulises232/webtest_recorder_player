@@ -8,6 +8,7 @@
 - Pantalla de inicio de sesión que valida credenciales contra la tabla `dbo.users` con hashes PBKDF2.
 - Servicio, DAO y DTO dedicados para autenticación reutilizando la arquitectura MVC existente.
 - Dependencia `pymssql` para conectarse a SQL Server mediante la cadena `SQLSERVER_CONNECTION_STRING`.
+- Selector de usuarios activos con precarga de credenciales almacenadas en `%APPDATA%\ForgeBuild\login_cache.json`.
 
 ### Fixed
 - Carga diferida de `pymssql` y validación del formato de cadena de conexión para evitar errores al iniciar la aplicación cuando la dependencia aún no está instalada.

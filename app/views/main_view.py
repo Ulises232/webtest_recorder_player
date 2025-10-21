@@ -58,7 +58,7 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
     dialog = tb.Toplevel(root)
     dialog.title("Iniciar sesión")
     dialog.resizable(False, False)
-    dialog.geometry("360x220")
+    dialog.geometry("380x260")
     dialog.attributes("-topmost", True)
 
     container = tb.Frame(dialog, padding=20)
@@ -66,17 +66,57 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
 
     tb.Label(container, text="Ingrese sus credenciales", font=("Segoe UI", 12, "bold")).pack(anchor=W, pady=(0, 12))
 
+    user_choices, choices_error = controller.list_active_users()
+    cached_credentials = controller.load_cached_credentials()
+
     username_var = tk.StringVar()
     password_var = tk.StringVar()
-    status_var = tk.StringVar()
+    status_var = tk.StringVar(value=choices_error or "")
+
+    display_to_username: dict[str, str] = {}
+    username_to_display: dict[str, str] = {}
+    username_widget: tk.Widget
 
     tb.Label(container, text="Usuario", font=("Segoe UI", 10, "bold")).pack(anchor=W)
-    username_entry = tb.Entry(container, textvariable=username_var)
-    username_entry.pack(fill=X, pady=(0, 10))
+
+    if user_choices:
+        display_values: list[str] = []
+        for username, display_name in user_choices:
+            formatted_name = (display_name or "").strip()
+            if not formatted_name:
+                formatted_name = username
+            elif formatted_name.lower() != username.lower():
+                formatted_name = f"{formatted_name} ({username})"
+            display_values.append(formatted_name)
+            display_to_username[formatted_name] = username
+            username_to_display.setdefault(username, formatted_name)
+
+        username_combo = tb.Combobox(
+            container,
+            textvariable=username_var,
+            values=display_values,
+            state="readonly",
+        )
+        username_combo.pack(fill=X, pady=(0, 10))
+        username_widget = username_combo
+        default_username = cached_credentials.get("username") if cached_credentials else ""
+        if default_username and default_username in username_to_display:
+            username_var.set(username_to_display[default_username])
+        elif display_values:
+            username_var.set(display_values[0])
+    else:
+        username_entry = tb.Entry(container, textvariable=username_var)
+        username_entry.pack(fill=X, pady=(0, 10))
+        username_widget = username_entry
+        if cached_credentials and cached_credentials.get("username"):
+            username_var.set(cached_credentials["username"])
 
     tb.Label(container, text="Contraseña", font=("Segoe UI", 10, "bold")).pack(anchor=W)
     password_entry = tb.Entry(container, textvariable=password_var, show="•")
     password_entry.pack(fill=X, pady=(0, 10))
+
+    if cached_credentials and cached_credentials.get("password"):
+        password_var.set(cached_credentials["password"])
 
     tb.Label(container, textvariable=status_var, bootstyle=WARNING).pack(anchor=W, pady=(0, 10))
 
@@ -85,7 +125,8 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
     def submit(_event=None):
         """Trigger the authentication flow using the typed credentials."""
 
-        username = username_var.get().strip()
+        selected_value = username_var.get().strip()
+        username = display_to_username.get(selected_value, selected_value)
         password = password_var.get()
         if not username or not password:
             status_var.set("Capture usuario y contraseña para continuar.")
@@ -137,7 +178,7 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
     btn_row.pack(fill=X)
 
     tb.Button(btn_row, text="Cancelar", command=cancel, bootstyle=SECONDARY).pack(side=RIGHT, padx=(6, 0))
-    tb.Button(btn_row, text="Iniciar sesión", command=submit, bootstyle=PRIMARY).pack(side=RIGHT)
+    tb.Button(btn_row, text="Acceder", command=submit, bootstyle=PRIMARY).pack(side=RIGHT)
 
     dialog.bind("<Return>", submit)
     dialog.protocol("WM_DELETE_WINDOW", cancel)
@@ -146,7 +187,10 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
     dialog.lift()
     dialog.focus_force()
     dialog.grab_set()
-    username_entry.focus_set()
+    if cached_credentials and cached_credentials.get("password"):
+        password_entry.focus_set()
+    else:
+        username_widget.focus_set()
 
     root.wait_window(dialog)
     return result["auth"]

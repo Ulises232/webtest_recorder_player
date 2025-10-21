@@ -3,7 +3,7 @@
 import importlib
 from contextlib import closing
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Optional, Tuple, Type
+from typing import TYPE_CHECKING, Callable, List, Optional, Tuple, Type
 
 if TYPE_CHECKING:  # pragma: no cover - solo para tipado
     import pymssql
@@ -74,3 +74,42 @@ class UserDAO:
             passwordAlgo=row.get("password_algo"),
             requirePasswordReset=bool(row.get("require_password_reset", False)),
         )
+
+    def list_active_users(self) -> List[UserRecord]:
+        """Return all active users ordered for display purposes."""
+
+        error_types: Tuple[Type[BaseException], ...] = (DatabaseConnectorError,)
+        try:
+            pymssql = importlib.import_module("pymssql")
+        except ModuleNotFoundError:
+            pymssql = None
+        else:
+            error_types = (DatabaseConnectorError, pymssql.Error)
+
+        try:
+            with closing(self._connection_factory()) as connection:
+                with closing(connection.cursor(as_dict=True)) as cursor:
+                    cursor.execute(
+                        (
+                            "SELECT username, display_name, email, active, "
+                            "password_hash, password_salt, password_algo, require_password_reset "
+                            "FROM dbo.users WHERE active = 1 ORDER BY display_name, username"
+                        )
+                    )
+                    rows = cursor.fetchall() or []
+        except error_types as exc:  # pragma: no cover - depende del entorno
+            raise UserDAOError("No fue posible consultar los usuarios en la base de datos.") from exc
+
+        return [
+            UserRecord(
+                username=row.get("username"),
+                displayName=row.get("display_name"),
+                email=row.get("email"),
+                active=bool(row.get("active", False)),
+                passwordHash=row.get("password_hash"),
+                passwordSalt=row.get("password_salt"),
+                passwordAlgo=row.get("password_algo"),
+                requirePasswordReset=bool(row.get("require_password_reset", False)),
+            )
+            for row in rows
+        ]
