@@ -39,6 +39,18 @@ CREATE TABLE dbo.activity_log (
     CONSTRAINT uq_activity UNIQUE (ts, [user], group_name, project, branch, action, result, message)
 );
 
+-- Historial reutilizable para la aplicación de escritorio y complementos
+CREATE TABLE dbo.history_entries (
+    entry_id INT IDENTITY(1,1) PRIMARY KEY,
+    category NVARCHAR(255) NOT NULL,
+    value NVARCHAR(1024) NOT NULL,
+    created_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT uq_history_entries UNIQUE (category, value)
+);
+
+CREATE INDEX ix_history_entries_category_created_at
+    ON dbo.history_entries (category, created_at DESC, entry_id DESC);
+
 CREATE TABLE dbo.sprints (
     id INT IDENTITY(1,1) PRIMARY KEY,
     branch_key NVARCHAR(512) NOT NULL DEFAULT '',
