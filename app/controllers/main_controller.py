@@ -1,10 +1,14 @@
 """Controller coordinating the desktop view with domain services."""
 
 import json
-import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from app.config.storage_paths import (
+    getEvidenceDirectory,
+    getLoginCachePath,
+    getSessionsDirectory,
+)
 from app.daos.database import DatabaseConnector
 from app.daos.history_dao import HistoryDAO
 from app.daos.user_dao import UserDAO, UserDAOError
@@ -23,9 +27,10 @@ class MainController:
     URL_HISTORY_CATEGORY = "desktop-url-history"
     CONFLUENCE_HISTORY_CATEGORY = "desktop-confluence-history"
     CONFLUENCE_SPACES_CATEGORY = "desktop-confluence-space-history"
-    LOGIN_CACHE_PATH = Path(
-        os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")
-    ) / "ForgeBuild" / "login_cache.json"
+    LOGIN_CACHE_PATH = getLoginCachePath()
+
+    SESSIONS_DIR = getSessionsDirectory()
+    EVIDENCE_DIR = getEvidenceDirectory()
 
     def __init__(self) -> None:
         """Bootstrap all services used by the desktop application."""
@@ -63,6 +68,16 @@ class MainController:
     def get_authenticated_user(self) -> Optional[AuthenticationResult]:
         """Return the cached authenticated user, if any."""
         return self._authenticated_user
+
+    def getSessionsDirectory(self) -> Path:
+        """Provide the storage folder for generated session documents."""
+
+        return self.SESSIONS_DIR
+
+    def getEvidenceDirectory(self) -> Path:
+        """Provide the storage folder for evidence artifacts."""
+
+        return self.EVIDENCE_DIR
 
     def list_active_users(self) -> Tuple[List[Tuple[str, str]], Optional[str]]:
         """Fetch the username/display name pairs available for selection."""

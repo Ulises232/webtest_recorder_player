@@ -1242,12 +1242,15 @@ def run_gui():
     tb.Label(card2, text="Carpeta evidencias").grid(row=1, column=0, sticky=W, pady=(6,0))
     ev_var = tb.StringVar(); tb.Entry(card2, textvariable=ev_var).grid(row=1, column=1, sticky=EW, padx=(10,0) , pady=(2,2))
 
+    sessions_dir = controller.getSessionsDirectory()
+    evidence_dir = controller.getEvidenceDirectory()
+
     def refresh_paths(*_):
         """Auto-generated docstring for `refresh_paths`."""
         base = controller.slugify_for_windows(base_var.get() or "reporte")
         final = f"{base}"
-        doc_var.set(str(Path("sessions")/f"{final}.docx"))
-        ev_var.set(str(Path("evidencia")/final))
+        doc_var.set(str(sessions_dir / f"{final}.docx"))
+        ev_var.set(str(evidence_dir / final))
     base_var.trace_add("write", refresh_paths); refresh_paths()
 
     prev_base = {"val": controller.slugify_for_windows(base_var.get() or "reporte")}
@@ -1257,7 +1260,7 @@ def run_gui():
         old_base = prev_base["val"]
         if not old_base or new_base == old_base:
             return
-        ev_old = Path("evidencia")/old_base
+        ev_old = evidence_dir / old_base
         has_hist = bool(session.get("steps")) if isinstance(session, dict) else False
         has_old_dir = ev_old.exists()
         if has_hist or has_old_dir:
@@ -1465,7 +1468,7 @@ def run_gui():
 
         status.set("⏳ Preparando contenido y abriendo Confluence...")
         controller.open_chrome_with_profile(url_c, "Default")
-        log_path = Path("sessions") / f"{session.get('title')}_confluence.log"
+        log_path = sessions_dir / f"{session.get('title')}_confluence.log"
 
         Messagebox.showinfo(
             "Confluence",
