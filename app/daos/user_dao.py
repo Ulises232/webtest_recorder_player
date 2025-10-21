@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Optional, Tuple, Type
 
 if TYPE_CHECKING:  # pragma: no cover - solo para tipado
-    import pyodbc
+    import pymssql
 
 from app.daos.database import DatabaseConnectorError
 
@@ -32,7 +32,7 @@ class UserDAOError(RuntimeError):
 class UserDAO:
     """Retrieve users from SQL Server using a provided connection factory."""
 
-    def __init__(self, connection_factory: Callable[[], "pyodbc.Connection"]) -> None:
+    def __init__(self, connection_factory: Callable[[], "pymssql.Connection"]) -> None:
         """Store the connection factory for later usage."""
         self._connection_factory = connection_factory
 
@@ -40,22 +40,22 @@ class UserDAO:
         """Return the user associated to the username or ``None`` if missing."""
         error_types: Tuple[Type[BaseException], ...] = (DatabaseConnectorError,)
         try:
-            pyodbc = importlib.import_module("pyodbc")
+            pymssql = importlib.import_module("pymssql")
         except ModuleNotFoundError:
-            pyodbc = None
+            pymssql = None
         else:
-            error_types = (DatabaseConnectorError, pyodbc.Error)
+            error_types = (DatabaseConnectorError, pymssql.Error)
 
         try:
             with closing(self._connection_factory()) as connection:
-                with closing(connection.cursor()) as cursor:
+                with closing(connection.cursor(as_dict=True)) as cursor:
                     cursor.execute(
                         (
                             "SELECT username, display_name, email, active, "
                             "password_hash, password_salt, password_algo, require_password_reset "
-                            "FROM dbo.users WHERE username = ?"
+                            "FROM dbo.users WHERE username = %s"
                         ),
-                        username,
+                        (username,),
                     )
                     row = cursor.fetchone()
         except error_types as exc:  # pragma: no cover - depende del entorno
@@ -65,12 +65,12 @@ class UserDAO:
             return None
 
         return UserRecord(
-            username=row.username,
-            displayName=row.display_name,
-            email=getattr(row, "email", None),
-            active=bool(row.active),
-            passwordHash=getattr(row, "password_hash", None),
-            passwordSalt=getattr(row, "password_salt", None),
-            passwordAlgo=getattr(row, "password_algo", None),
-            requirePasswordReset=bool(getattr(row, "require_password_reset", False)),
+            username=row.get("username"),
+            displayName=row.get("display_name"),
+            email=row.get("email"),
+            active=bool(row.get("active", False)),
+            passwordHash=row.get("password_hash"),
+            passwordSalt=row.get("password_salt"),
+            passwordAlgo=row.get("password_algo"),
+            requirePasswordReset=bool(row.get("require_password_reset", False)),
         )

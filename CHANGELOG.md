@@ -2,15 +2,15 @@
 
 ## [0.4.0] - 2024-05-28
 ### Changed
-- `iniciar_pruebas.bat` ahora crea `.venv` y sincroniza `requirements-dev.txt` antes de lanzar la aplicacion para evitar faltantes como `pyodbc`.
+- `iniciar_pruebas.bat` ahora crea `.venv` y sincroniza `requirements-dev.txt` antes de lanzar la aplicacion para evitar faltantes como el driver de base de datos.
 
 ### Added
 - Pantalla de inicio de sesión que valida credenciales contra la tabla `dbo.users` con hashes PBKDF2.
 - Servicio, DAO y DTO dedicados para autenticación reutilizando la arquitectura MVC existente.
-- Dependencia `pyodbc` para conectarse a SQL Server mediante la cadena `SQLSERVER_CONNECTION_STRING`.
+- Dependencia `pymssql` para conectarse a SQL Server mediante la cadena `SQLSERVER_CONNECTION_STRING`.
 
 ### Fixed
-- Carga diferida de `pyodbc` para evitar errores al iniciar la aplicación cuando la dependencia aún no está instalada.
+- Carga diferida de `pymssql` y validación del formato de cadena de conexión para evitar errores al iniciar la aplicación cuando la dependencia aún no está instalada.
 
 ## [0.3.0] - 2024-05-27
 ### Added

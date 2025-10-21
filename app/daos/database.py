@@ -2,10 +2,11 @@
 
 import importlib
 import os
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+from urllib.parse import parse_qs, unquote, urlparse
 
 if TYPE_CHECKING:  # pragma: no cover - solo se usa para tipado
-    import pyodbc
+    import pymssql
 
 
 class DatabaseConnectorError(RuntimeError):
@@ -21,28 +22,102 @@ class DatabaseConnector:
         """Store the connection string for future usage."""
         self._connection_string = connection_string or os.environ.get(self.ENV_CONNECTION_STRING)
 
-    def _load_driver(self):
-        """Import ``pyodbc`` on demand to keep the dependency optional."""
+    def _load_driver(self) -> Any:
+        """Import ``pymssql`` on demand to keep the dependency optional."""
         try:
-            return importlib.import_module("pyodbc")
+            return importlib.import_module("pymssql")
         except ModuleNotFoundError as exc:  # pragma: no cover - depende del entorno
             raise DatabaseConnectorError(
-                "No se encontró la dependencia 'pyodbc'. Instálala ejecutando 'pip install pyodbc'."
+                "No se encontró la dependencia 'pymssql'. Instálala ejecutando 'pip install pymssql==2.3.8'."
             ) from exc
 
-    def get_connection(self) -> "pyodbc.Connection":
+    def _build_connection_kwargs(self, raw_connection: str) -> Dict[str, Any]:
+        """Translate a connection string into arguments understood by ``pymssql``."""
+        params: Dict[str, Any] = {}
+
+        if "://" in raw_connection:
+            parsed = urlparse(raw_connection)
+            if parsed.hostname:
+                params["server"] = parsed.hostname
+            if parsed.port:
+                params["port"] = parsed.port
+            if parsed.username:
+                params["user"] = unquote(parsed.username)
+            if parsed.password:
+                params["password"] = unquote(parsed.password)
+            database = parsed.path.lstrip("/")
+            if database:
+                params["database"] = database
+            query_params = parse_qs(parsed.query, keep_blank_values=True)
+            for key, value in query_params.items():
+                if not value:
+                    continue
+                normalized = key.lower()
+                candidate = value[0]
+                if normalized in {"timeout", "login_timeout", "port"}:
+                    try:
+                        params[normalized if normalized != "port" else "port"] = int(candidate)
+                    except ValueError:  # pragma: no cover - depende del formato recibido
+                        continue
+                elif normalized in {"charset", "appname"}:
+                    params[normalized] = candidate
+            return params
+
+        key_map = {
+            "server": {"server", "data source", "addr", "address", "network address", "host"},
+            "database": {"database", "initial catalog"},
+            "user": {"user id", "uid", "user", "username"},
+            "password": {"password", "pwd"},
+            "port": {"port"},
+            "timeout": {"timeout"},
+            "login_timeout": {"login timeout"},
+            "charset": {"charset"},
+            "appname": {"app", "appname", "application name"},
+        }
+
+        tokens = [segment.strip() for segment in raw_connection.split(";") if segment.strip()]
+        normalized_pairs: Dict[str, str] = {}
+        for token in tokens:
+            if "=" not in token:
+                continue
+            key, value = token.split("=", 1)
+            normalized_pairs[key.strip().lower()] = value.strip()
+
+        for target_key, aliases in key_map.items():
+            for alias in aliases:
+                if alias not in normalized_pairs:
+                    continue
+                raw_value = normalized_pairs[alias]
+                if target_key in {"port", "timeout", "login_timeout"}:
+                    try:
+                        params[target_key] = int(raw_value)
+                    except ValueError:  # pragma: no cover - depende del formato recibido
+                        pass
+                else:
+                    params[target_key] = raw_value
+                break
+
+        return params
+
+    def get_connection(self) -> "pymssql.Connection":
         """Open and return a new SQL Server connection."""
         if not self._connection_string:
             raise DatabaseConnectorError(
                 "No se encontró la cadena de conexión para SQL Server. "
                 "Defina SQLSERVER_CONNECTION_STRING o pase el valor explícitamente."
             )
-        pyodbc = self._load_driver()
+        pymssql = self._load_driver()
+        connection_kwargs = self._build_connection_kwargs(self._connection_string)
+        if not connection_kwargs:
+            raise DatabaseConnectorError(
+                "La cadena de conexión no tiene un formato compatible con pymssql. "
+                "Utiliza pares clave-valor (Server, Database, User Id, Password, Port) o una URL mssql://usuario:contraseña@host/db."
+            )
         try:
-            return pyodbc.connect(self._connection_string)
-        except pyodbc.Error as exc:  # pragma: no cover - depende del entorno
+            return pymssql.connect(**connection_kwargs)
+        except pymssql.Error as exc:  # pragma: no cover - depende del entorno
             raise DatabaseConnectorError("No fue posible conectarse a SQL Server.") from exc
 
-    def connection_factory(self) -> Callable[[], "pyodbc.Connection"]:
+    def connection_factory(self) -> Callable[[], "pymssql.Connection"]:
         """Expose a callable that creates a new connection on each invocation."""
         return self.get_connection
