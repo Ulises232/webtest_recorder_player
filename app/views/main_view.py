@@ -166,8 +166,14 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
         else:
             _focus_username_widget()
 
+    user_choices_state: dict[str, object] = {
+        "resolved": False,
+        "choices": [],
+        "error": None,
+    }
+
     def fetch_user_choices() -> None:
-        """Retrieve user options in the background to avoid blocking the UI."""
+        """Retrieve user options without interacting with Tkinter widgets."""
 
         try:
             choices, error_message = controller.list_active_users()
@@ -175,7 +181,24 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
             choices = []
             error_message = str(exc)
 
-        dialog.after(0, lambda: apply_user_choices(choices, error_message))
+        user_choices_state["choices"] = choices
+        user_choices_state["error"] = error_message
+        user_choices_state["resolved"] = True
+
+    def process_user_choices() -> None:
+        """Apply user choices once the background request has completed."""
+
+        if not dialog.winfo_exists():
+            return
+
+        if user_choices_state.get("resolved"):
+            apply_user_choices(
+                user_choices_state.get("choices", []),
+                user_choices_state.get("error"),
+            )
+            return
+
+        dialog.after(100, process_user_choices)
 
     result: dict[str, Optional[AuthenticationResult]] = {"auth": None}
 
@@ -251,6 +274,7 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
         _focus_username_widget()
 
     Thread(target=fetch_user_choices, daemon=True).start()
+    dialog.after(100, process_user_choices)
 
     root.wait_window(dialog)
     return result["auth"]
