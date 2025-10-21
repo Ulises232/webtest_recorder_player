@@ -1,13 +1,13 @@
 """Helper utilities to establish SQL Server connections for DAOs."""
 
 import importlib
-import os
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
 if TYPE_CHECKING:  # pragma: no cover - solo se usa para tipado
     import pymssql
 
+from app.config.database_config import DatabaseConfiguration
 
 class DatabaseConnectorError(RuntimeError):
     """Raised when the application is unable to open a database connection."""
@@ -16,11 +16,23 @@ class DatabaseConnectorError(RuntimeError):
 class DatabaseConnector:
     """Provide SQL Server connections based on environment configuration."""
 
-    ENV_CONNECTION_STRING = "SQLSERVER_CONNECTION_STRING"
+    def __init__(
+        self,
+        connection_string: Optional[str] = None,
+        configuration: Optional[DatabaseConfiguration] = None,
+    ) -> None:
+        """Store the connection string for future usage.
 
-    def __init__(self, connection_string: Optional[str] = None) -> None:
-        """Store the connection string for future usage."""
-        self._connection_string = connection_string or os.environ.get(self.ENV_CONNECTION_STRING)
+        Args:
+            connection_string: Optional explicit connection string overriding the
+                environment resolution.
+            configuration: Optional configuration helper used to resolve the
+                connection string and backend from environment variables.
+        """
+
+        self._configuration = configuration or DatabaseConfiguration()
+        resolved = connection_string if connection_string is not None else self._configuration.get_connection_string()
+        self._connection_string = resolved.strip() if isinstance(resolved, str) and resolved.strip() else None
 
     def _load_driver(self) -> Any:
         """Import ``pymssql`` on demand to keep the dependency optional."""
@@ -101,10 +113,14 @@ class DatabaseConnector:
 
     def get_connection(self) -> "pymssql.Connection":
         """Open and return a new SQL Server connection."""
+        if not self._configuration.is_sqlserver_backend():
+            raise DatabaseConnectorError(
+                "El backend configurado no apunta a SQL Server. Ajusta BRANCH_HISTORY_BACKEND=sqlserver para usar esta conexión.",
+            )
         if not self._connection_string:
             raise DatabaseConnectorError(
                 "No se encontró la cadena de conexión para SQL Server. "
-                "Defina SQLSERVER_CONNECTION_STRING o pase el valor explícitamente."
+                "Define SQLSERVER_CONNECTION_STRING o BRANCH_HISTORY_DB_URL en el entorno o en el archivo .env.",
             )
         pymssql = self._load_driver()
         connection_kwargs = self._build_connection_kwargs(self._connection_string)
