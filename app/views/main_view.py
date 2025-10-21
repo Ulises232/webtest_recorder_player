@@ -36,7 +36,7 @@ class Messagebox:
         return hasattr(BootstrapMessagebox, method_name)
 
     @staticmethod
-    def showinfo(message: str, title: str) -> None:
+    def showinfo(title: str,message: str) -> None:
         """Display an informational dialog using the preferred backend."""
 
         if Messagebox._should_use_bootstrap("show_info"):
@@ -45,13 +45,7 @@ class Messagebox:
         tk_messagebox.showinfo(title=title, message=message)
 
     @staticmethod
-    def show_info(message: str, title: str) -> None:
-        """Alias for :meth:`showinfo` to match ttkbootstrap's API."""
-
-        Messagebox.showinfo(message, title)
-
-    @staticmethod
-    def showwarning(message: str, title: str) -> None:
+    def showwarning(title: str,message: str) -> None:
         """Display a warning dialog using the preferred backend."""
 
         if Messagebox._should_use_bootstrap("show_warning"):
@@ -60,13 +54,7 @@ class Messagebox:
         tk_messagebox.showwarning(title=title, message=message)
 
     @staticmethod
-    def show_warning(message: str, title: str) -> None:
-        """Alias for :meth:`showwarning` to match ttkbootstrap's API."""
-
-        Messagebox.showwarning(message, title)
-
-    @staticmethod
-    def showerror(message: str, title: str) -> None:
+    def showerror(title: str,message: str) -> None:
         """Display an error dialog using the preferred backend."""
 
         if Messagebox._should_use_bootstrap("show_error"):
@@ -75,13 +63,7 @@ class Messagebox:
         tk_messagebox.showerror(title=title, message=message)
 
     @staticmethod
-    def show_error(message: str, title: str) -> None:
-        """Alias for :meth:`showerror` to match ttkbootstrap's API."""
-
-        Messagebox.showerror(message, title)
-
-    @staticmethod
-    def askyesno(message: str, title: str) -> bool:
+    def askyesno( title: str,message: str) -> bool:
         """Request a yes/no confirmation dialog and return the chosen option."""
 
         if Messagebox._should_use_bootstrap("askyesno"):
@@ -285,28 +267,28 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
 
         password_var.set("")
         if status == AuthenticationStatus.RESET_REQUIRED:
-            Messagebox.show_error(
-                "Debes actualizar la contraseña en el sistema principal antes de usar esta aplicación.",
+            Messagebox.showerror(
                 "Cambio de contraseña requerido",
+                "Debes actualizar la contraseña en el sistema principal antes de usar esta aplicación."
             )
             status_var.set("Actualiza tu contraseña en el sistema principal.")
             return
 
         if status == AuthenticationStatus.PASSWORD_REQUIRED:
-            Messagebox.show_error(
-                "El usuario no tiene contraseña definida. Ingresa al sistema principal para establecerla.",
+            Messagebox.showerror(
                 "Contraseña requerida",
+                "El usuario no tiene contraseña definida. Ingresa al sistema principal para establecerla."
             )
             status_var.set("Define una contraseña en el sistema principal y vuelve a intentar.")
             return
 
         if status == AuthenticationStatus.INACTIVE:
-            Messagebox.show_error(auth_result.message, "Usuario inactivo")
+            Messagebox.showerror("Usuario inactivo",auth_result.message)
             status_var.set("La cuenta está desactivada.")
             return
 
         if status == AuthenticationStatus.ERROR:
-            Messagebox.show_error(auth_result.message, "Error al iniciar sesión")
+            Messagebox.showerror("Error al iniciar sesión",auth_result.message)
             status_var.set("Revisa la conexión a la base de datos e intenta nuevamente.")
             return
 
@@ -1344,7 +1326,7 @@ def run_gui():
         has_hist = bool(session.get("steps")) if isinstance(session, dict) else False
         has_old_dir = ev_old.exists()
         if has_hist or has_old_dir:
-            if Messagebox.askyesno(f"Se cambió el nombre base de '{old_base}' a '{new_base}'. ¿Limpiar historial en la GUI? (Las evidencias en disco no se tocan)", "Cambio de nombre"):
+            if Messagebox.askyesno("Cambio de nombre",f"Se cambió el nombre base de '{old_base}' a '{new_base}'. ¿Limpiar historial en la GUI? (Las evidencias en disco no se tocan)"):
                 _clear_evidence_for(old_base, also_clear_session=True)
                 status.set(f"🧹 Historial limpiado. Evidencias en disco conservadas para: {old_base}")
             prev_base["val"] = new_base
@@ -1364,7 +1346,7 @@ def run_gui():
             import mss, mss.tools
             return True
         except Exception:
-            Messagebox.show_error("Falta el paquete 'mss'. Instala:\n\npip install mss", "SNAP")
+            Messagebox.showerror( "SNAP","Falta el paquete 'mss'. Instala:\n\npip install mss")
             return False
 
     def select_monitor_modal(master, monitors):
@@ -1394,7 +1376,7 @@ def run_gui():
         """Auto-generated docstring for `select_monitor`."""
         monitors = sct.monitors
         if not monitors:
-            Messagebox.show_error("No se detectaron monitores.", "SNAP"); return None, None
+            Messagebox.showerror("SNAP","No se detectaron monitores."); return None, None
         idx = _monitor_index["val"]
         if ask_always.get() or idx is None or idx >= len(monitors) or idx < 0:
             sel = select_monitor_modal(app, monitors)
@@ -1431,7 +1413,7 @@ def run_gui():
             meta_desc["consideraciones"] = meta_out.get("consideraciones","")
             meta_desc["observacion"]     = meta_out.get("observaciones","")
         except Exception as e:
-            Messagebox.show_warning(f"Editor no disponible: {e}", "Editor")
+            Messagebox.showwarning( "Editor",f"Editor no disponible: {e}")
 
         step = {"cmd": "snap_externo", "shots": [str(out_path)]}
         if meta_desc["descripcion"]: step["desc"] = meta_desc["descripcion"]
@@ -1478,7 +1460,7 @@ def run_gui():
             meta_desc["consideraciones"] = meta_out.get("consideraciones","")
             meta_desc["observacion"]     = meta_out.get("observaciones","")
         except Exception as e:
-            Messagebox.show_warning(f"Editor no disponible: {e}", "Editor")
+            Messagebox.show_warning("Editor",f"Editor no disponible: {e}")
 
         step = {"cmd": "snap_region_all", "shots": [str(out_path)]}
         if meta_desc["descripcion"]: step["desc"] = meta_desc["descripcion"]
@@ -1590,7 +1572,7 @@ def run_gui():
         """Auto-generated docstring for `limpiar_cache`."""
         # Si aún no se ha guardado (DONE o Importar Confluence), pedir confirmación
         if not session_saved["val"]:
-            if not Messagebox.askyesno("Aún no has guardado con DONE ni Importar Confluence.¿Deseas limpiar SOLO el historial en la GUI de todas formas?(No se borrarán archivos de evidencia.)","Limpiar caché (solo GUI)"):return
+            if not Messagebox.askyesno("Limpiar caché (solo GUI)","Aún no has guardado con DONE ni Importar Confluence.¿Deseas limpiar SOLO el historial en la GUI de todas formas?(No se borrarán archivos de evidencia.)"):return
 
         base = controller.slugify_for_windows(base_var.get() or "reporte")
         _clear_evidence_for(base, also_clear_session=True)
@@ -1603,7 +1585,7 @@ def run_gui():
             controller.register_history_value(controller.URL_HISTORY_CATEGORY, url)
             status.set("✅ Chrome abierto (perfil Default)")
         else:
-            Messagebox.show_error(f"No se pudo abrir Chrome: {msg}", "Navegador")
+            Messagebox.showerror("Navegador",f"No se pudo abrir Chrome: {msg}")
 
     tb.Button(btns, text="🔗 Abrir navegador", command=abrir_nav, bootstyle=PRIMARY, width=18).pack(side=LEFT, padx=(0,8))
     tb.Button(btns, text="🖥️ Cambiar pantalla…", command=reset_monitor_selection, bootstyle=SECONDARY, width=20).pack(side=LEFT, padx=8)
