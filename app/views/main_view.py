@@ -109,10 +109,32 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
         """Ensure the dialog keeps a minimum size after layout updates."""
 
         dialog.update_idletasks()
-        required_width = max(420, dialog.winfo_reqwidth())
-        required_height = max(320, dialog.winfo_reqheight())
+        required_width = max(440, dialog.winfo_reqwidth())
+        required_height = max(340, dialog.winfo_reqheight())
         dialog.minsize(required_width, required_height)
-        dialog.geometry(f"{required_width}x{required_height}")
+        screen_width = dialog.winfo_screenwidth()
+        screen_height = dialog.winfo_screenheight()
+        pos_x = max(0, (screen_width - required_width) // 2)
+        pos_y = max(0, (screen_height - required_height) // 3)
+        dialog.geometry(f"{required_width}x{required_height}+{pos_x}+{pos_y}")
+
+    dialog_visibility: dict[str, bool] = {"shown": False}
+
+    def _ensure_dialog_shown() -> None:
+        """Display and focus the dialog once it has been prepared."""
+
+        _enforce_geometry()
+        dialog.update()
+        if not dialog.winfo_ismapped():
+            dialog.deiconify()
+        if not dialog_visibility["shown"]:
+            try:
+                dialog.wait_visibility()
+            except tk.TclError:
+                pass
+            dialog_visibility["shown"] = True
+        dialog.lift()
+        dialog.focus_force()
 
     def apply_user_choices(choices: list[tuple[str, str]], error_message: Optional[str]) -> None:
         """Populate the username input once the user list has been resolved."""
@@ -160,6 +182,7 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
 
         status_var.set(error_message or "")
         _enforce_geometry()
+        _ensure_dialog_shown()
 
         if cached_password:
             password_entry.focus_set()
@@ -263,10 +286,8 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
     dialog.bind("<Return>", submit)
     dialog.protocol("WM_DELETE_WINDOW", cancel)
 
-    _enforce_geometry()
+    _ensure_dialog_shown()
 
-    dialog.lift()
-    dialog.focus_force()
     dialog.grab_set()
     if cached_password:
         password_entry.focus_set()

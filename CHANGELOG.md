@@ -17,6 +17,7 @@
 - Se ajustó el tamaño mínimo del cuadro de inicio de sesión para que los botones **Acceder** y **Cancelar** siempre queden visibles.
 - La ventana de inicio de sesión aparece de inmediato y carga el listado de usuarios activos en segundo plano para no bloquear la interfaz cuando SQL Server no responde.
 - La carga en segundo plano del listado de usuarios ahora evita invocar Tkinter desde hilos secundarios, eliminando el error `RuntimeError: main thread is not in main loop`.
+- El cuadro de inicio de sesión se centra automáticamente y se asegura de mostrarse aunque la ventana principal permanezca oculta.
 
 ## [0.3.0] - 2024-05-27
 ### Added
