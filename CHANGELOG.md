@@ -3,6 +3,7 @@
 ## [0.5.0] - 2024-05-29
 ### Added
 - Tabla `dbo.history_entries` documentada en `docs/database_schema.md` para centralizar los historiales de la aplicación.
+- Directriz en `AGENTS.md` que exige la creación automática de nuevas tablas o campos en la base de datos.
 
 ### Changed
 - Los historiales de URLs y Confluence ahora se leen y escriben desde SQL Server mediante `HistoryDAO`.
