@@ -29,7 +29,7 @@ Esta guía explica cómo preparar el entorno virtual, ejecutar la aplicación en
   ```bash
   python scripts/manage_environment.py run --mode dev
   ```
-- En Windows puede continuar utilizando `iniciar_pruebas.bat`, el cual delega la operación al mismo script y garantiza que `.venv` esté sincronizado.
+- En Windows puede continuar utilizando `iniciar_pruebas.bat`, el cual ahora crea/actualiza `.venv`, instala `requirements-dev.txt` si es necesario y delega la ejecución al mismo script para mantener el entorno sincronizado.
 
 ## Pruebas automatizadas
 
