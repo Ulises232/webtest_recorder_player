@@ -19,11 +19,27 @@ except Exception:  # pragma: no cover - fallback when ttkbootstrap is unavailabl
 class Messagebox:
     """Wrapper that normalizes message dialogs across Tkinter and ttkbootstrap."""
 
+    _use_bootstrap_dialogs: bool = False
+
+    @staticmethod
+    def preferBootstrapDialogs(enable: bool) -> None:
+        """Toggle the use of ttkbootstrap dialogs globally."""
+
+        Messagebox._use_bootstrap_dialogs = bool(enable)
+
+    @staticmethod
+    def _should_use_bootstrap(method_name: str) -> bool:
+        """Determine whether ttkbootstrap provides a compatible dialog method."""
+
+        if not Messagebox._use_bootstrap_dialogs or BootstrapMessagebox is None:
+            return False
+        return hasattr(BootstrapMessagebox, method_name)
+
     @staticmethod
     def showinfo(message: str, title: str) -> None:
-        """Display an informational dialog using the available backend."""
+        """Display an informational dialog using the preferred backend."""
 
-        if BootstrapMessagebox is not None and hasattr(BootstrapMessagebox, "show_info"):
+        if Messagebox._should_use_bootstrap("show_info"):
             BootstrapMessagebox.show_info(message, title)
             return
         tk_messagebox.showinfo(title=title, message=message)
@@ -36,9 +52,9 @@ class Messagebox:
 
     @staticmethod
     def showwarning(message: str, title: str) -> None:
-        """Display a warning dialog using the available backend."""
+        """Display a warning dialog using the preferred backend."""
 
-        if BootstrapMessagebox is not None and hasattr(BootstrapMessagebox, "show_warning"):
+        if Messagebox._should_use_bootstrap("show_warning"):
             BootstrapMessagebox.show_warning(message, title)
             return
         tk_messagebox.showwarning(title=title, message=message)
@@ -51,9 +67,9 @@ class Messagebox:
 
     @staticmethod
     def showerror(message: str, title: str) -> None:
-        """Display an error dialog using the available backend."""
+        """Display an error dialog using the preferred backend."""
 
-        if BootstrapMessagebox is not None and hasattr(BootstrapMessagebox, "show_error"):
+        if Messagebox._should_use_bootstrap("show_error"):
             BootstrapMessagebox.show_error(message, title)
             return
         tk_messagebox.showerror(title=title, message=message)
@@ -68,15 +84,12 @@ class Messagebox:
     def askyesno(message: str, title: str) -> bool:
         """Request a yes/no confirmation dialog and return the chosen option."""
 
-        if BootstrapMessagebox is not None:
-            if hasattr(BootstrapMessagebox, "askyesno"):
-                result = BootstrapMessagebox.askyesno(message, title)
-            elif hasattr(BootstrapMessagebox, "yesno"):
-                result = BootstrapMessagebox.yesno(message, title)
-            else:
-                result = None
-            if result is not None:
-                return str(result).strip().lower() in {"yes", "true", "1", "ok"}
+        if Messagebox._should_use_bootstrap("askyesno"):
+            result = BootstrapMessagebox.askyesno(message, title)
+            return str(result).strip().lower() in {"yes", "true", "1", "ok"}
+        if Messagebox._should_use_bootstrap("yesno"):
+            result = BootstrapMessagebox.yesno(message, title)
+            return str(result).strip().lower() in {"yes", "true", "1", "ok"}
         return bool(tk_messagebox.askyesno(title=title, message=message))
 
 from app.controllers.main_controller import MainController
