@@ -6,11 +6,78 @@ import time
 from pathlib import Path
 from typing import Optional
 import tkinter as tk
-from tkinter import ttk, messagebox as Messagebox
+from tkinter import ttk, messagebox as tk_messagebox
 
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
-from ttkbootstrap.dialogs import Messagebox
+try:
+    from ttkbootstrap.dialogs import Messagebox as BootstrapMessagebox
+except Exception:  # pragma: no cover - fallback when ttkbootstrap is unavailable
+    BootstrapMessagebox = None
+
+
+class Messagebox:
+    """Wrapper that normalizes message dialogs across Tkinter and ttkbootstrap."""
+
+    @staticmethod
+    def showinfo(message: str, title: str) -> None:
+        """Display an informational dialog using the available backend."""
+
+        if BootstrapMessagebox is not None and hasattr(BootstrapMessagebox, "show_info"):
+            BootstrapMessagebox.show_info(message, title)
+            return
+        tk_messagebox.showinfo(title=title, message=message)
+
+    @staticmethod
+    def show_info(message: str, title: str) -> None:
+        """Alias for :meth:`showinfo` to match ttkbootstrap's API."""
+
+        Messagebox.showinfo(message, title)
+
+    @staticmethod
+    def showwarning(message: str, title: str) -> None:
+        """Display a warning dialog using the available backend."""
+
+        if BootstrapMessagebox is not None and hasattr(BootstrapMessagebox, "show_warning"):
+            BootstrapMessagebox.show_warning(message, title)
+            return
+        tk_messagebox.showwarning(title=title, message=message)
+
+    @staticmethod
+    def show_warning(message: str, title: str) -> None:
+        """Alias for :meth:`showwarning` to match ttkbootstrap's API."""
+
+        Messagebox.showwarning(message, title)
+
+    @staticmethod
+    def showerror(message: str, title: str) -> None:
+        """Display an error dialog using the available backend."""
+
+        if BootstrapMessagebox is not None and hasattr(BootstrapMessagebox, "show_error"):
+            BootstrapMessagebox.show_error(message, title)
+            return
+        tk_messagebox.showerror(title=title, message=message)
+
+    @staticmethod
+    def show_error(message: str, title: str) -> None:
+        """Alias for :meth:`showerror` to match ttkbootstrap's API."""
+
+        Messagebox.showerror(message, title)
+
+    @staticmethod
+    def askyesno(message: str, title: str) -> bool:
+        """Request a yes/no confirmation dialog and return the chosen option."""
+
+        if BootstrapMessagebox is not None:
+            if hasattr(BootstrapMessagebox, "askyesno"):
+                result = BootstrapMessagebox.askyesno(message, title)
+            elif hasattr(BootstrapMessagebox, "yesno"):
+                result = BootstrapMessagebox.yesno(message, title)
+            else:
+                result = None
+            if result is not None:
+                return str(result).strip().lower() in {"yes", "true", "1", "ok"}
+        return bool(tk_messagebox.askyesno(title=title, message=message))
 
 from app.controllers.main_controller import MainController
 from app.dtos.auth_result import AuthenticationResult, AuthenticationStatus
