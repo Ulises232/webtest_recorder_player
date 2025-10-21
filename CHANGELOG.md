@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.5.1] - 2024-05-29
+### Fixed
+- Normalizada la integración con los cuadros de diálogo para que usen `ttkbootstrap` cuando está disponible y hagan `fallback` a Tkinter, evitando excepciones `AttributeError` y asegurando que los mensajes solo aparezcan en pantalla.
+- Se dejan habilitados los cuadros de diálogo nativos de Tkinter por defecto para conservar la confirmación original cuando se cierra con la "tacha" y evitar ventanas duplicadas.
+
 ## [0.5.0] - 2024-05-29
 ### Added
 - Tabla `dbo.history_entries` documentada en `docs/database_schema.md` para centralizar los historiales de la aplicación.
