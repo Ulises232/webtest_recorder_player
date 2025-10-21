@@ -14,6 +14,7 @@
 - Carga diferida de `pymssql` y validación del formato de cadena de conexión para evitar errores al iniciar la aplicación cuando la dependencia aún no está instalada.
 - La ventana de inicio de sesión ahora se fuerza al frente para que siempre sea visible al abrir la aplicación.
 - La cadena de conexión se resuelve desde `.env` utilizando `BRANCH_HISTORY_DB_URL` y se centraliza en un módulo compartido para evitar duplicaciones.
+- Se ajustó el tamaño mínimo del cuadro de inicio de sesión para que los botones **Acceder** y **Cancelar** siempre queden visibles.
 
 ## [0.3.0] - 2024-05-27
 ### Added

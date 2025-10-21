@@ -58,7 +58,7 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
     dialog = tb.Toplevel(root)
     dialog.title("Iniciar sesión")
     dialog.resizable(False, False)
-    dialog.geometry("380x260")
+    dialog.transient(root)
     dialog.attributes("-topmost", True)
 
     container = tb.Frame(dialog, padding=20)
@@ -175,7 +175,7 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
         dialog.destroy()
 
     btn_row = tb.Frame(container)
-    btn_row.pack(fill=X)
+    btn_row.pack(fill=X, pady=(12, 0))
 
     tb.Button(btn_row, text="Cancelar", command=cancel, bootstyle=SECONDARY).pack(side=RIGHT, padx=(6, 0))
     tb.Button(btn_row, text="Acceder", command=submit, bootstyle=PRIMARY).pack(side=RIGHT)
@@ -184,6 +184,10 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
     dialog.protocol("WM_DELETE_WINDOW", cancel)
 
     dialog.update_idletasks()
+    required_width = max(420, dialog.winfo_reqwidth())
+    required_height = max(320, dialog.winfo_reqheight())
+    dialog.geometry(f"{required_width}x{required_height}")
+
     dialog.lift()
     dialog.focus_force()
     dialog.grab_set()
