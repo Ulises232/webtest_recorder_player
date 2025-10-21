@@ -19,7 +19,7 @@
 - La carga en segundo plano del listado de usuarios ahora evita invocar Tkinter desde hilos secundarios, eliminando el error `RuntimeError: main thread is not in main loop`.
 - El cuadro de inicio de sesión se centra automáticamente y se asegura de mostrarse aunque la ventana principal permanezca oculta.
 - Se restableció la geometría base del cuadro de inicio de sesión a `380x260` y se eliminó el modo `transient` para que vuelva a mostrarse correctamente.
-- La lista de usuarios activos ahora se carga de forma síncrona al abrir el cuadro de inicio de sesión para evitar que el mensaje "Cargando usuarios activos..." quede permanente.
+- La lista de usuarios activos vuelve a precargarse antes de mostrar el cuadro de inicio de sesión, de modo que el selector aparezca listo sin mostrar la leyenda "Cargando usuarios activos...".
 
 ## [0.3.0] - 2024-05-27
 ### Added

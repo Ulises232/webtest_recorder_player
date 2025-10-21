@@ -59,6 +59,7 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
     dialog.resizable(False, False)
     dialog.geometry("380x260")
     dialog.attributes("-topmost", True)
+    dialog.withdraw()
 
     container = tb.Frame(dialog, padding=20)
     container.pack(fill=BOTH, expand=YES)
@@ -251,10 +252,6 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
     dialog.bind("<Return>", submit)
     dialog.protocol("WM_DELETE_WINDOW", cancel)
 
-    _ensure_dialog_shown()
-
-    dialog.grab_set()
-
     try:
         choices, error_message = controller.list_active_users()
     except Exception as exc:  # pragma: no cover - protege contra errores inesperados
@@ -262,6 +259,8 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
         error_message = str(exc)
 
     apply_user_choices(choices, error_message)
+
+    dialog.grab_set()
 
     root.wait_window(dialog)
     return result["auth"]
