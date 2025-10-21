@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0] - 2024-05-29
+### Added
+- Tabla `dbo.history_entries` documentada en `docs/database_schema.md` para centralizar los historiales de la aplicación.
+
+### Changed
+- Los historiales de URLs y Confluence ahora se leen y escriben desde SQL Server mediante `HistoryDAO`.
+- `HistoryDAO` crea automáticamente la tabla `dbo.history_entries` cuando aún no existe en la base de datos.
+
+### Removed
+- Archivos locales `url_history.json` y `_confluence_history.json` reemplazados por almacenamiento en base de datos.
+
 ## [0.4.0] - 2024-05-28
 ### Changed
 - `iniciar_pruebas.bat` ahora crea `.venv` y sincroniza `requirements-dev.txt` antes de lanzar la aplicacion para evitar faltantes como el driver de base de datos.

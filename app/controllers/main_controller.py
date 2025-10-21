@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from app.daos.database import DatabaseConnector
-from app.daos.history_dao import FileHistoryDAO
+from app.daos.history_dao import HistoryDAO
 from app.daos.user_dao import UserDAO, UserDAOError
 from app.dtos.auth_result import AuthenticationResult, AuthenticationStatus
 from app.services.auth_service import AuthService
@@ -20,32 +20,29 @@ class MainController:
 
     DEFAULT_URL = "http://localhost:8080/ELLiS/login"
     CONF_DEFAULT = "https://sistemaspremium.atlassian.net/wiki/spaces/"
+    URL_HISTORY_CATEGORY = "desktop-url-history"
+    CONFLUENCE_HISTORY_CATEGORY = "desktop-confluence-history"
+    CONFLUENCE_SPACES_CATEGORY = "desktop-confluence-space-history"
     LOGIN_CACHE_PATH = Path(
         os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")
     ) / "ForgeBuild" / "login_cache.json"
 
     def __init__(self) -> None:
         """Bootstrap all services used by the desktop application."""
-        self._history_services: Dict[Path, HistoryService] = {}
+        self._history_service = HistoryService(HistoryDAO(DatabaseConnector().connection_factory()))
         self._browser_service = BrowserService()
         self._naming_service = NamingService()
         self._user_dao = UserDAO(DatabaseConnector().connection_factory())
         self._auth_service = AuthService(self._user_dao)
         self._authenticated_user: Optional[AuthenticationResult] = None
 
-    def _get_history_service(self, file_path: Path) -> HistoryService:
-        """Lazy-load the history service associated to a specific file."""
-        if file_path not in self._history_services:
-            self._history_services[file_path] = HistoryService(FileHistoryDAO(file_path))
-        return self._history_services[file_path]
+    def load_history(self, category: str, default_value: str) -> List[str]:
+        """Return the stored history values for a logical category."""
+        return self._history_service.load_history(category, default_value)
 
-    def load_history(self, file_path: Path, default_value: str) -> List[str]:
-        """Return the stored history for a file path."""
-        return self._get_history_service(file_path).load_history(default_value)
-
-    def register_history_value(self, file_path: Path, value: str) -> None:
-        """Store a new value in the history file."""
-        self._get_history_service(file_path).register_value(value)
+    def register_history_value(self, category: str, value: str, limit: Optional[int] = None) -> None:
+        """Store a new value in the history database."""
+        self._history_service.register_value(category, value, limit)
 
     def open_chrome_with_profile(self, url: str, profile_dir: str = "Default") -> Tuple[bool, str]:
         """Delegate the browser opening logic to the service layer."""

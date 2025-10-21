@@ -41,11 +41,6 @@ from utils.report_word import build_word
 from utils.confluence_ui import import_steps_to_confluence
 from utils.capture_editor import open_capture_editor
 
-
-URLS_FILE = Path("url_history.json")
-CONF_FILE = Path("confluence_history.json")
-SPACES_FILE = Path("confluence_spaces.json")
-
 controller = MainController()
 
 
@@ -1234,7 +1229,7 @@ def run_gui():
     base_var = tb.StringVar(value="reporte"); tb.Entry(card1, textvariable=base_var).grid(row=0, column=1, sticky=EW, padx=(10,0))
 
     tb.Label(card1, text="URL inicial").grid(row=2, column=0, sticky=W, pady=(10,2))
-    urls = controller.load_history(URLS_FILE, controller.DEFAULT_URL)
+    urls = controller.load_history(controller.URL_HISTORY_CATEGORY, controller.DEFAULT_URL)
     url_var = tb.StringVar(value=urls[0] if urls else controller.DEFAULT_URL)
     tb.Combobox(card1, textvariable=url_var, values=urls, width=56, bootstyle="light").grid(row=2, column=1, sticky=EW, pady=(10,2))
 
@@ -1430,13 +1425,13 @@ def run_gui():
         tb.Label(frm, text="URL de la página de Confluence", font=("Segoe UI", 11, "bold")).pack(anchor=W, pady=(0,8))
 
         tb.Label(frm, text="ENTORNO", font=("Segoe UI", 11, "bold")).pack(anchor=W, pady=(10,2))
-        hist = controller.load_history(CONF_FILE, controller.CONF_DEFAULT)
+        hist = controller.load_history(controller.CONFLUENCE_HISTORY_CATEGORY, controller.CONF_DEFAULT)
         urlv = tb.StringVar(value=hist[0] if hist else "")
         cmb = tb.Combobox(frm, textvariable=urlv, values=hist, width=70, bootstyle="light"); cmb.pack(fill=X)
         cmb.icursor("end")
 
         tb.Label(frm, text="ESPACIO", font=("Segoe UI", 11, "bold")).pack(anchor=W, pady=(10,2))
-        histspaces = controller.load_history(SPACES_FILE, "")
+        histspaces = controller.load_history(controller.CONFLUENCE_SPACES_CATEGORY, "")
         urlvspaces = tb.StringVar(value=histspaces[0] if histspaces else "")
         cmbspaces = tb.Combobox(frm, textvariable=urlvspaces, values=histspaces, width=70, bootstyle="light"); cmbspaces.pack(fill=X)
         cmbspaces.icursor("end")
@@ -1445,7 +1440,10 @@ def run_gui():
         btns = tb.Frame(frm); btns.pack(fill=X, pady=(12,0))
         def ok():
             """Auto-generated docstring for `ok`."""
-            res["url"] = ((urlv.get() + urlvspaces.get())  or "").strip(); win.destroy()
+            space_value = urlvspaces.get().strip()
+            if space_value:
+                controller.register_history_value(controller.CONFLUENCE_SPACES_CATEGORY, space_value)
+            res["url"] = ((urlv.get() + space_value) or "").strip(); win.destroy()
         def cancel():
             """Auto-generated docstring for `cancel`."""
             res["url"] = None; win.destroy()
@@ -1463,7 +1461,7 @@ def run_gui():
 
         url_c = modal_confluence_url()
         if not url_c: return
-        controller.register_history_value(CONF_FILE, url_c)
+        controller.register_history_value(controller.CONFLUENCE_HISTORY_CATEGORY, url_c)
 
         status.set("⏳ Preparando contenido y abriendo Confluence...")
         controller.open_chrome_with_profile(url_c, "Default")
@@ -1518,8 +1516,11 @@ def run_gui():
         """Auto-generated docstring for `abrir_nav`."""
         url = (url_var.get() or controller.DEFAULT_URL).strip() or controller.DEFAULT_URL
         ok, msg = controller.open_chrome_with_profile(url, "Default")
-        if ok: status.set("✅ Chrome abierto (perfil Default)")
-        else: Messagebox.show_error(f"No se pudo abrir Chrome: {msg}", "Navegador")
+        if ok:
+            controller.register_history_value(controller.URL_HISTORY_CATEGORY, url)
+            status.set("✅ Chrome abierto (perfil Default)")
+        else:
+            Messagebox.show_error(f"No se pudo abrir Chrome: {msg}", "Navegador")
 
     tb.Button(btns, text="🔗 Abrir navegador", command=abrir_nav, bootstyle=PRIMARY, width=18).pack(side=LEFT, padx=(0,8))
     tb.Button(btns, text="🖥️ Cambiar pantalla…", command=reset_monitor_selection, bootstyle=SECONDARY, width=20).pack(side=LEFT, padx=8)

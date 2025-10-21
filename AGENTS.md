@@ -10,6 +10,9 @@ Estas indicaciones aplican a todo el repositorio.
 - Para cada tabla o colección de datos debe existir su correspondiente DAO. Cada DAO debe proveer métodos CRUD específicos y evitar exponer directamente detalles de la base de datos al resto de capas.
 - Mantener los servicios libres de llamadas directas al motor de base de datos; siempre interactúan a través de los DAOs.
 
+## Base de datos
+- Cada vez que se introduzcan tablas o campos nuevos, el código debe encargarse de crearlos automáticamente en la base de datos durante el arranque o el primer uso para evitar pasos manuales.
+
 ## Estilo de código
 - Los nombres de variables, funciones, propiedades y métodos deben declararse usando `camelCase`.
 - Cada función o método debe contar con una docstring de triple comilla (`"""`) en la primera línea que describa brevemente su propósito, los parámetros que recibe y el valor que retorna (si aplica).
