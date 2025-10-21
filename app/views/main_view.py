@@ -66,59 +66,116 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
 
     tb.Label(container, text="Ingrese sus credenciales", font=("Segoe UI", 12, "bold")).pack(anchor=W, pady=(0, 12))
 
-    user_choices, choices_error = controller.list_active_users()
-    cached_credentials = controller.load_cached_credentials()
+    cached_credentials = controller.load_cached_credentials() or {}
+    cached_username = cached_credentials.get("username", "").strip()
+    cached_password = cached_credentials.get("password", "")
 
-    username_var = tk.StringVar()
-    password_var = tk.StringVar()
-    status_var = tk.StringVar(value=choices_error or "")
+    username_var = tk.StringVar(value=cached_username)
+    password_var = tk.StringVar(value=cached_password)
+    status_var = tk.StringVar(value="Cargando usuarios activos...")
 
     display_to_username: dict[str, str] = {}
     username_to_display: dict[str, str] = {}
-    username_widget: tk.Widget
+    username_widget_ref: dict[str, Optional[tk.Widget]] = {"widget": None}
 
     tb.Label(container, text="Usuario", font=("Segoe UI", 10, "bold")).pack(anchor=W)
 
-    if user_choices:
-        display_values: list[str] = []
-        for username, display_name in user_choices:
-            formatted_name = (display_name or "").strip()
-            if not formatted_name:
-                formatted_name = username
-            elif formatted_name.lower() != username.lower():
-                formatted_name = f"{formatted_name} ({username})"
-            display_values.append(formatted_name)
-            display_to_username[formatted_name] = username
-            username_to_display.setdefault(username, formatted_name)
+    username_container = tb.Frame(container)
+    username_container.pack(fill=X, pady=(0, 10))
 
-        username_combo = tb.Combobox(
-            container,
-            textvariable=username_var,
-            values=display_values,
-            state="readonly",
-        )
-        username_combo.pack(fill=X, pady=(0, 10))
-        username_widget = username_combo
-        default_username = cached_credentials.get("username") if cached_credentials else ""
-        if default_username and default_username in username_to_display:
-            username_var.set(username_to_display[default_username])
-        elif display_values:
-            username_var.set(display_values[0])
-    else:
-        username_entry = tb.Entry(container, textvariable=username_var)
-        username_entry.pack(fill=X, pady=(0, 10))
-        username_widget = username_entry
-        if cached_credentials and cached_credentials.get("username"):
-            username_var.set(cached_credentials["username"])
+    initial_entry = tb.Entry(username_container, textvariable=username_var)
+    initial_entry.pack(fill=X)
+    username_widget_ref["widget"] = initial_entry
 
     tb.Label(container, text="Contraseña", font=("Segoe UI", 10, "bold")).pack(anchor=W)
     password_entry = tb.Entry(container, textvariable=password_var, show="•")
     password_entry.pack(fill=X, pady=(0, 10))
 
-    if cached_credentials and cached_credentials.get("password"):
-        password_var.set(cached_credentials["password"])
-
     tb.Label(container, textvariable=status_var, bootstyle=WARNING).pack(anchor=W, pady=(0, 10))
+
+    def _set_username_widget(widget: tk.Widget) -> None:
+        """Remember the active username widget to manage focus later on."""
+
+        username_widget_ref["widget"] = widget
+
+    def _focus_username_widget() -> None:
+        """Focus the current username widget if it is available."""
+
+        widget = username_widget_ref.get("widget")
+        if widget and widget.winfo_exists():
+            widget.focus_set()
+
+    def _enforce_geometry() -> None:
+        """Ensure the dialog keeps a minimum size after layout updates."""
+
+        dialog.update_idletasks()
+        required_width = max(420, dialog.winfo_reqwidth())
+        required_height = max(320, dialog.winfo_reqheight())
+        dialog.minsize(required_width, required_height)
+        dialog.geometry(f"{required_width}x{required_height}")
+
+    def apply_user_choices(choices: list[tuple[str, str]], error_message: Optional[str]) -> None:
+        """Populate the username input once the user list has been resolved."""
+
+        if not dialog.winfo_exists():
+            return
+
+        display_to_username.clear()
+        username_to_display.clear()
+
+        for child in username_container.winfo_children():
+            child.destroy()
+
+        if choices:
+            display_values: list[str] = []
+            for username, display_name in choices:
+                formatted_name = (display_name or "").strip()
+                if not formatted_name:
+                    formatted_name = username
+                elif formatted_name.lower() != username.lower():
+                    formatted_name = f"{formatted_name} ({username})"
+                display_values.append(formatted_name)
+                display_to_username[formatted_name] = username
+                username_to_display.setdefault(username, formatted_name)
+
+            username_combo = tb.Combobox(
+                username_container,
+                textvariable=username_var,
+                values=display_values,
+                state="readonly",
+            )
+            username_combo.pack(fill=X)
+            _set_username_widget(username_combo)
+
+            if cached_username and cached_username in username_to_display:
+                username_var.set(username_to_display[cached_username])
+            elif display_values:
+                username_var.set(display_values[0])
+        else:
+            username_entry = tb.Entry(username_container, textvariable=username_var)
+            username_entry.pack(fill=X)
+            _set_username_widget(username_entry)
+            if cached_username:
+                username_var.set(cached_username)
+
+        status_var.set(error_message or "")
+        _enforce_geometry()
+
+        if cached_password:
+            password_entry.focus_set()
+        else:
+            _focus_username_widget()
+
+    def fetch_user_choices() -> None:
+        """Retrieve user options in the background to avoid blocking the UI."""
+
+        try:
+            choices, error_message = controller.list_active_users()
+        except Exception as exc:  # pragma: no cover - protege contra errores inesperados
+            choices = []
+            error_message = str(exc)
+
+        dialog.after(0, lambda: apply_user_choices(choices, error_message))
 
     result: dict[str, Optional[AuthenticationResult]] = {"auth": None}
 
@@ -183,18 +240,17 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
     dialog.bind("<Return>", submit)
     dialog.protocol("WM_DELETE_WINDOW", cancel)
 
-    dialog.update_idletasks()
-    required_width = max(420, dialog.winfo_reqwidth())
-    required_height = max(320, dialog.winfo_reqheight())
-    dialog.geometry(f"{required_width}x{required_height}")
+    _enforce_geometry()
 
     dialog.lift()
     dialog.focus_force()
     dialog.grab_set()
-    if cached_credentials and cached_credentials.get("password"):
+    if cached_password:
         password_entry.focus_set()
     else:
-        username_widget.focus_set()
+        _focus_username_widget()
+
+    Thread(target=fetch_user_choices, daemon=True).start()
 
     root.wait_window(dialog)
     return result["auth"]
