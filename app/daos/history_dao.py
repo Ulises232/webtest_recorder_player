@@ -27,10 +27,58 @@ class HistoryDAO:
         """Persist the callable used to request new connections."""
         self._connection_factory = connection_factory
         self._default_limit = default_limit
+        self._schema_ready = False
+
+    def _ensure_schema(self) -> None:
+        """Create the SQL Server table the first time the DAO is used."""
+        if self._schema_ready:
+            return
+
+        try:
+            connection = self._connection_factory()
+        except DatabaseConnectorError as exc:  # pragma: no cover - depende del entorno
+            raise HistoryDAOError(str(exc)) from exc
+
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                """
+                IF NOT EXISTS (
+                    SELECT 1 FROM sys.tables t
+                    INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+                    WHERE t.name = 'history_entries' AND s.name = 'dbo'
+                )
+                BEGIN
+                    CREATE TABLE dbo.history_entries (
+                        entry_id INT IDENTITY(1, 1) NOT NULL PRIMARY KEY,
+                        category NVARCHAR(255) NOT NULL,
+                        value NVARCHAR(1024) NOT NULL,
+                        created_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+                        CONSTRAINT uq_history_entries UNIQUE (category, value)
+                    );
+                    CREATE INDEX ix_history_entries_category_created_at
+                        ON dbo.history_entries (category, created_at DESC, entry_id DESC);
+                END
+                """
+            )
+            connection.commit()
+        except Exception as exc:  # pragma: no cover - depende del driver
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            raise HistoryDAOError(
+                "No fue posible preparar la tabla de historiales en la base de datos."
+            ) from exc
+        finally:
+            connection.close()
+
+        self._schema_ready = True
 
     def list_recent(self, category: str, default_value: str, limit: Optional[int] = None) -> List[HistoryEntry]:
         """Return the stored history entries ordered from newest to oldest."""
         effective_limit = limit or self._default_limit
+        self._ensure_schema()
         try:
             connection = self._connection_factory()
         except DatabaseConnectorError as exc:  # pragma: no cover - depende del entorno
@@ -82,6 +130,7 @@ class HistoryDAO:
             return
 
         effective_limit = limit or self._default_limit
+        self._ensure_schema()
         try:
             connection = self._connection_factory()
         except DatabaseConnectorError as exc:  # pragma: no cover - depende del entorno

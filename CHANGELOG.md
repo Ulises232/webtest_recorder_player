@@ -6,6 +6,7 @@
 
 ### Changed
 - Los historiales de URLs y Confluence ahora se leen y escriben desde SQL Server mediante `HistoryDAO`.
+- `HistoryDAO` crea automáticamente la tabla `dbo.history_entries` cuando aún no existe en la base de datos.
 
 ### Removed
 - Archivos locales `url_history.json` y `_confluence_history.json` reemplazados por almacenamiento en base de datos.

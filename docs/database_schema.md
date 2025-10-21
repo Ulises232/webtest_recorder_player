@@ -40,6 +40,7 @@ CREATE TABLE dbo.activity_log (
 );
 
 -- Historial reutilizable para la aplicación de escritorio y complementos
+-- Esta tabla se crea automáticamente desde HistoryDAO cuando aún no existe.
 CREATE TABLE dbo.history_entries (
     entry_id INT IDENTITY(1,1) PRIMARY KEY,
     category NVARCHAR(255) NOT NULL,
