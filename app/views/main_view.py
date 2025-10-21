@@ -53,12 +53,13 @@ controller = MainController()
 def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
     """Show a modal login dialog and return the authenticated user if any."""
 
+    root.update_idletasks()
+
     dialog = tb.Toplevel(root)
     dialog.title("Iniciar sesión")
-    dialog.transient(root)
-    dialog.grab_set()
     dialog.resizable(False, False)
     dialog.geometry("360x220")
+    dialog.attributes("-topmost", True)
 
     container = tb.Frame(dialog, padding=20)
     container.pack(fill=BOTH, expand=YES)
@@ -140,6 +141,11 @@ def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
 
     dialog.bind("<Return>", submit)
     dialog.protocol("WM_DELETE_WINDOW", cancel)
+
+    dialog.update_idletasks()
+    dialog.lift()
+    dialog.focus_force()
+    dialog.grab_set()
     username_entry.focus_set()
 
     root.wait_window(dialog)
@@ -229,6 +235,7 @@ def run_gui():
     """Render and start the Tkinter interface for the recorder."""
     app = tb.Window(themename="flatly")
     app.withdraw()
+    app.update_idletasks()
 
     auth_result = _prompt_login(app)
     if not auth_result:

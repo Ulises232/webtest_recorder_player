@@ -11,6 +11,7 @@
 
 ### Fixed
 - Carga diferida de `pymssql` y validación del formato de cadena de conexión para evitar errores al iniciar la aplicación cuando la dependencia aún no está instalada.
+- La ventana de inicio de sesión ahora se fuerza al frente para que siempre sea visible al abrir la aplicación.
 
 ## [0.3.0] - 2024-05-27
 ### Added
