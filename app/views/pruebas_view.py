@@ -246,6 +246,7 @@ def build_pruebas_view(
     sessions_canvas.configure(yscrollcommand=sessions_scroll.set)
 
     sessions_rows_holder = tk.Frame(sessions_canvas, bg=row_even_bg)
+    sessions_rows_holder.grid_columnconfigure(0, weight=1)
     sessions_window = sessions_canvas.create_window((0, 0), window=sessions_rows_holder, anchor="nw")
 
     def _on_sessions_canvas_configure(event) -> None:
@@ -335,7 +336,7 @@ def build_pruebas_view(
             is_owner = session_obj.username.lower() == current_username and bool(current_username)
             row_bg = row_even_bg if index % 2 == 0 else row_odd_bg
             row_frame = tk.Frame(sessions_rows_holder, bg=row_bg)
-            row_frame.grid(row=index - 1, column=0, sticky="ew", pady=(0, 8))
+            row_frame.grid(row=index - 1, column=0, sticky="ew", pady=(0, 8), padx=(0, 12))
             row_frame.grid_columnconfigure(0, minsize=160)
             row_frame.grid_columnconfigure(1, weight=1, minsize=240)
             row_frame.grid_columnconfigure(2, minsize=160)

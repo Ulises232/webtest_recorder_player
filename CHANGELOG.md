@@ -15,6 +15,7 @@
 
 ### Fixed
 - Se impide editar o eliminar sesiones creadas por otros usuarios mostrando avisos claros en la tabla.
+- Se corrigió la alineación de la tabla del tablero de sesiones para que coincida con los encabezados y conserve el estilo azul.
 
 ## [0.6.1] - 2024-05-30
 ### Added
