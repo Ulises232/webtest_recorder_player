@@ -9,8 +9,9 @@
 
 ### Changed
 - La vista de pruebas ahora organiza el flujo en pestañas y solo muestra los controles inferiores cuando corresponde.
-- Los botones del tablero de sesiones mantienen un estilo caricaturesco y las acciones se muestran como etiquetas tipo botón con texto destacado en lugar de iconos.
+ - Los controles del tablero de sesiones mantienen un estilo caricaturesco y ahora exhiben botones de acciones con tipografía destacada en lugar de iconos.
 - La acción **Editar** abre la pestaña principal de evidencias reutilizando todas las herramientas (incluida la edición de capturas) en lugar de mostrar una ventana modal separada.
+- Las acciones dentro del tablero ahora se renderizan como botones azules al estilo de **Crear sesión**, conservando las restricciones para propietarios.
 
 ### Fixed
 - Se impide editar o eliminar sesiones creadas por otros usuarios mostrando avisos claros en la tabla.

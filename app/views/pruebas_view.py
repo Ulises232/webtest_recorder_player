@@ -169,8 +169,6 @@ def build_pruebas_view(
     evidence_dir = controller.getEvidenceDirectory()
 
     style = tb.Style()
-    style.configure("Sessions.Treeview", rowheight=32, font=("Segoe UI", 10))
-    style.configure("Sessions.Treeview.Heading", font=("Segoe UI", 10, "bold"))
     style.configure(
         "CartoonAccent.TButton",
         font=("Segoe UI", 11, "bold"),
@@ -181,7 +179,12 @@ def build_pruebas_view(
     )
     style.map(
         "CartoonAccent.TButton",
-        background=[("active", "#867DFF"), ("pressed", "#5548d9")],
+        background=[
+            ("active", "#867DFF"),
+            ("pressed", "#5548d9"),
+            ("disabled", "#B8B3FF"),
+        ],
+        foreground=[("disabled", "#E9E7FF")],
     )
     style.configure(
         "CartoonGhost.TButton",
@@ -198,6 +201,72 @@ def build_pruebas_view(
         background=[("active", "#FFF4CC"), ("pressed", "#FFE08A")],
         foreground=[("active", "#2b2f4c"), ("pressed", "#1f2238")],
     )
+
+    header_bg = "#E8ECFF"
+    row_even_bg = "#ffffff"
+    row_odd_bg = "#f5f7fa"
+
+    table_container = tb.Frame(dashboard_tab)
+    table_container.pack(fill=BOTH, expand=YES)
+
+    header_frame = tk.Frame(table_container, bg=header_bg)
+    header_frame.pack(fill=X, padx=(0, 12))
+    header_frame.grid_columnconfigure(0, minsize=160)
+    header_frame.grid_columnconfigure(1, weight=1, minsize=240)
+    header_frame.grid_columnconfigure(2, minsize=160)
+    header_frame.grid_columnconfigure(3, minsize=340)
+
+    header_specs = (
+        ("Fecha", "center"),
+        ("Nombre", "w"),
+        ("Usuario", "center"),
+        ("Acciones", "e"),
+    )
+    for column_index, (title, anchor) in enumerate(header_specs):
+        header_label = tk.Label(
+            header_frame,
+            text=title,
+            bg=header_bg,
+            fg="#1f2240",
+            font=("Segoe UI", 10, "bold"),
+            anchor=anchor,
+        )
+        header_label.grid(row=0, column=column_index, sticky="ew", padx=(16 if column_index == 0 else 8, 8), pady=12)
+
+    sessions_canvas = tk.Canvas(
+        table_container,
+        highlightthickness=0,
+        background=row_even_bg,
+        borderwidth=0,
+    )
+    sessions_canvas.pack(side=LEFT, fill=BOTH, expand=YES, padx=(0, 12))
+
+    sessions_scroll = ttk.Scrollbar(table_container, orient="vertical", command=sessions_canvas.yview)
+    sessions_scroll.pack(side=RIGHT, fill=Y)
+    sessions_canvas.configure(yscrollcommand=sessions_scroll.set)
+
+    sessions_rows_holder = tk.Frame(sessions_canvas, bg=row_even_bg)
+    sessions_window = sessions_canvas.create_window((0, 0), window=sessions_rows_holder, anchor="nw")
+
+    def _on_sessions_canvas_configure(event) -> None:
+        """Resize the table canvas content when the widget changes."""
+
+        try:
+            sessions_canvas.itemconfigure(sessions_window, width=event.width)
+        except Exception:
+            pass
+
+    def _update_sessions_scrollregion(_event) -> None:
+        """Sync the scrollable region with the content size."""
+
+        try:
+            sessions_canvas.configure(scrollregion=sessions_canvas.bbox("all"))
+        except Exception:
+            pass
+
+    sessions_canvas.bind("<Configure>", _on_sessions_canvas_configure, add="+")
+    sessions_rows_holder.bind("<Configure>", _update_sessions_scrollregion, add="+")
+    bind_mousewheel(sessions_canvas, sessions_canvas.yview)
 
     dashboard_header = tb.Frame(dashboard_tab)
     dashboard_header.pack(fill=X, pady=(0, 16))
@@ -249,81 +318,106 @@ def build_pruebas_view(
         compound=LEFT,
     ).pack(side=RIGHT, padx=(0, 8))
 
-    action_labels = ("Ver", "Editar", "Eliminar", "Descargar")
-    action_wrappers = (
-        ("╭", "╮"),
-        ("╔", "╗"),
-        ("╠", "╣"),
-        ("╚", "╝"),
-    )
-
-    def _make_action_badge(label: str, wrappers: tuple[str, str]) -> str:
-        """Render a badge-like string to emulate buttons within the table."""
-
-        edge_left, edge_right = wrappers
-        clean_label = label.upper()
-        filler_width = max(1, 6 - len(clean_label) // 2)
-        filler = "═" * filler_width
-        return f"{edge_left}{filler} {clean_label} {filler}{edge_right}"
-
-    sessions_tree = ttk.Treeview(
-        dashboard_tab,
-        columns=("fecha", "nombre", "usuario", "acciones"),
-        show="headings",
-        style="Sessions.Treeview",
-        selectmode="browse",
-        height=10,
-    )
-    sessions_tree.heading("fecha", text="Fecha")
-    sessions_tree.heading("nombre", text="Nombre")
-    sessions_tree.heading("usuario", text="Usuario")
-    sessions_tree.heading("acciones", text="Acciones")
-    sessions_tree.column("fecha", width=160, anchor="center")
-    sessions_tree.column("nombre", width=220, anchor="w")
-    sessions_tree.column("usuario", width=140, anchor="center")
-    sessions_tree.column("acciones", width=260, anchor="center")
-    sessions_tree.tag_configure("odd", background="#f5f7fa")
-    sessions_tree.tag_configure("even", background="#ffffff")
-    sessions_tree.pack(side=LEFT, fill=BOTH, expand=YES)
-
-    sessions_scroll = ttk.Scrollbar(dashboard_tab, orient="vertical", command=sessions_tree.yview)
-    sessions_tree.configure(yscrollcommand=sessions_scroll.set)
-    sessions_scroll.pack(side=RIGHT, fill=Y)
-
-    sessions_registry: Dict[str, SessionDTO] = {}
-
     def _refresh_sessions_table() -> None:
         """Reload the table with the latest sessions from the service."""
 
-        sessions_tree.delete(*sessions_tree.get_children())
-        sessions_registry.clear()
+        for child in sessions_rows_holder.winfo_children():
+            try:
+                child.destroy()
+            except Exception:
+                pass
         sessions, error = controller.list_sessions(limit=100)
         if error:
             status.set(f"⚠️ {error}")
             return
         current_username = _get_current_username().lower()
         for index, session_obj in enumerate(sessions, start=1):
-            row_id = str(session_obj.sessionId or index)
-            sessions_registry[row_id] = session_obj
             is_owner = session_obj.username.lower() == current_username and bool(current_username)
-            row_labels = []
-            for action_index, base_label in enumerate(action_labels):
-                label_text = base_label
-                if action_index in (1, 2) and not is_owner:
-                    label_text = f"{base_label} (solo propietario)"
-                row_labels.append(_make_action_badge(label_text, action_wrappers[action_index]))
-            sessions_tree.insert(
-                "",
-                "end",
-                iid=row_id,
-                values=(
-                    format_timestamp(session_obj.startedAt),
-                    session_obj.name,
-                    session_obj.username,
-                    "   ".join(row_labels),
-                ),
-                tags=("even" if index % 2 == 0 else "odd",),
+            row_bg = row_even_bg if index % 2 == 0 else row_odd_bg
+            row_frame = tk.Frame(sessions_rows_holder, bg=row_bg)
+            row_frame.grid(row=index - 1, column=0, sticky="ew", pady=(0, 8))
+            row_frame.grid_columnconfigure(0, minsize=160)
+            row_frame.grid_columnconfigure(1, weight=1, minsize=240)
+            row_frame.grid_columnconfigure(2, minsize=160)
+            row_frame.grid_columnconfigure(3, minsize=340)
+
+            tk.Label(
+                row_frame,
+                text=format_timestamp(session_obj.startedAt),
+                bg=row_bg,
+                fg="#1f2230",
+                font=("Segoe UI", 10),
+                anchor="center",
+            ).grid(row=0, column=0, sticky="ew", padx=(16, 8), pady=12)
+
+            tk.Label(
+                row_frame,
+                text=session_obj.name,
+                bg=row_bg,
+                fg="#1f2230",
+                font=("Segoe UI", 10),
+                anchor="w",
+            ).grid(row=0, column=1, sticky="ew", padx=8, pady=12)
+
+            tk.Label(
+                row_frame,
+                text=session_obj.username,
+                bg=row_bg,
+                fg="#1f2230",
+                font=("Segoe UI", 10),
+                anchor="center",
+            ).grid(row=0, column=2, sticky="ew", padx=8, pady=12)
+
+            actions_frame = tk.Frame(row_frame, bg=row_bg)
+            actions_frame.grid(row=0, column=3, sticky="e", padx=(8, 16))
+
+            def _make_action_button(label: str, handler: Callable[[], None], enabled: bool = True) -> tb.Button:
+                """Create a blue-styled action button for the dashboard table."""
+
+                btn = tb.Button(
+                    actions_frame,
+                    text=label,
+                    style="CartoonAccent.TButton",
+                    command=handler,
+                    width=12,
+                )
+                if not enabled:
+                    btn.configure(state="disabled")
+                btn.pack(side=LEFT, padx=4)
+                return btn
+
+            _make_action_button(
+                "Ver",
+                handler=lambda obj=session_obj: _view_session_details(obj),
             )
+
+            _make_action_button(
+                "Editar",
+                handler=lambda obj=session_obj: _open_session_editor(obj),
+                enabled=is_owner,
+            )
+
+            _make_action_button(
+                "Eliminar",
+                handler=lambda obj=session_obj: _confirm_delete_session(obj),
+                enabled=is_owner,
+            )
+
+            _make_action_button(
+                "Descargar",
+                handler=lambda obj=session_obj: _handle_download(obj),
+            )
+
+            if not is_owner:
+                note_label = tk.Label(
+                    actions_frame,
+                    text="Solo propietario",
+                    bg=row_bg,
+                    fg="#6C63FF",
+                    font=("Segoe UI", 8, "italic"),
+                    anchor="e",
+                )
+                note_label.pack(anchor="e", pady=(6, 0))
         if sessions:
             status.set(f"📋 {len(sessions)} sesiones cargadas.")
         else:
@@ -472,40 +566,6 @@ def build_pruebas_view(
             "Descarga",
             "La descarga de sesiones estará disponible próximamente.",
         )
-
-    def _on_sessions_tree_click(event) -> None:
-        """Dispatch click events to the corresponding action handler."""
-
-        region = sessions_tree.identify("region", event.x, event.y)
-        if region != "cell":
-            return
-        column = sessions_tree.identify_column(event.x)
-        if column != "#4":
-            return
-        row_id = sessions_tree.identify_row(event.y)
-        if not row_id:
-            return
-        bbox = sessions_tree.bbox(row_id, column)
-        if not bbox:
-            return
-        rel_x = event.x - bbox[0]
-        segment_width = bbox[2] / max(1, len(action_labels))
-        action_index = int(rel_x // segment_width) if segment_width else 0
-        action_index = max(0, min(action_index, len(action_labels) - 1))
-        session_obj = sessions_registry.get(row_id)
-        if not session_obj:
-            return
-        if action_index == 0:
-            _view_session_details(session_obj)
-        elif action_index == 1:
-            _open_session_editor(session_obj)
-        elif action_index == 2:
-            _confirm_delete_session(session_obj)
-        else:
-            _handle_download(session_obj)
-
-    sessions_tree.bind("<Button-1>", _on_sessions_tree_click, add="+")
-    sessions_tree.bind("<Double-1>", lambda event: _on_sessions_tree_click(event))
 
     _refresh_sessions_table()
 
