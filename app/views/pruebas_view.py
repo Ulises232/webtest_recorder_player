@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional
 import os
 import time
 import tkinter as tk
@@ -13,7 +13,7 @@ from tkinter import ttk, filedialog
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *  # noqa: F401,F403
 
-from app.dtos.session_dto import SessionDTO
+from app.dtos.session_dto import SessionDTO, SessionEvidenceDTO
 
 
 @dataclass
@@ -132,6 +132,33 @@ def build_pruebas_view(
     style = tb.Style()
     style.configure("Sessions.Treeview", rowheight=32, font=("Segoe UI", 10))
     style.configure("Sessions.Treeview.Heading", font=("Segoe UI", 10, "bold"))
+    style.configure(
+        "CartoonAccent.TButton",
+        font=("Segoe UI", 11, "bold"),
+        foreground="#ffffff",
+        background="#6C63FF",
+        padding=(18, 10),
+        borderwidth=0,
+    )
+    style.map(
+        "CartoonAccent.TButton",
+        background=[("active", "#867DFF"), ("pressed", "#5548d9")],
+    )
+    style.configure(
+        "CartoonGhost.TButton",
+        font=("Segoe UI", 11, "bold"),
+        foreground="#414561",
+        background="#FFFFFF",
+        bordercolor="#FFC542",
+        focusthickness=3,
+        focuscolor="#FFC542",
+        padding=(18, 10),
+    )
+    style.map(
+        "CartoonGhost.TButton",
+        background=[("active", "#FFF4CC"), ("pressed", "#FFE08A")],
+        foreground=[("active", "#2b2f4c"), ("pressed", "#1f2238")],
+    )
 
     dashboard_header = tb.Frame(dashboard_tab)
     dashboard_header.pack(fill=X, pady=(0, 16))
@@ -170,18 +197,21 @@ def build_pruebas_view(
 
     tb.Button(
         dashboard_header,
-        text="Actualizar",
-        bootstyle=SECONDARY,
+        text="🔄 Actualizar",
+        style="CartoonGhost.TButton",
         command=lambda: _refresh_sessions_table(),
+        compound=LEFT,
     ).pack(side=RIGHT)
     tb.Button(
         dashboard_header,
-        text="➕ Crear nueva sesión",
-        bootstyle=SUCCESS,
+        text="✨ Crear sesión",
+        style="CartoonAccent.TButton",
         command=_open_new_session_tab,
+        compound=LEFT,
     ).pack(side=RIGHT, padx=(0, 8))
 
     action_labels = ("Ver", "Editar", "Eliminar", "Descargar")
+    action_icons = ("🔍", "🎨", "🗑️", "⬇️")
     sessions_tree = ttk.Treeview(
         dashboard_tab,
         columns=("fecha", "nombre", "usuario", "acciones"),
@@ -221,9 +251,15 @@ def build_pruebas_view(
         for index, session_obj in enumerate(sessions, start=1):
             row_id = str(session_obj.sessionId or index)
             sessions_registry[row_id] = session_obj
-            edit_label = "Editar" if session_obj.username.lower() == current_username and current_username else "Editar (solo propietario)"
-            delete_label = "Eliminar" if session_obj.username.lower() == current_username and current_username else "Eliminar (solo propietario)"
-            row_labels = [action_labels[0], edit_label, delete_label, action_labels[3]]
+            is_owner = session_obj.username.lower() == current_username and bool(current_username)
+            row_labels = []
+            for action_index, base_label in enumerate(action_labels):
+                icon = action_icons[action_index]
+                label_text = base_label
+                if action_index in (1, 2) and not is_owner:
+                    icon = "🔒"
+                    label_text = f"{base_label} (solo propietario)"
+                row_labels.append(f"{icon} {label_text}")
             sessions_tree.insert(
                 "",
                 "end",
@@ -266,60 +302,254 @@ def build_pruebas_view(
             tb.Label(row, text=value or "", font=("Segoe UI", 10), anchor=W, wraplength=520, justify=LEFT).pack(side=LEFT, fill=X, expand=YES, padx=(8, 0))
         tb.Button(frm, text="Cerrar", command=win.destroy, bootstyle=SECONDARY, width=18).pack(anchor=E, pady=(16, 0))
 
-    def _prompt_edit_session(session_obj) -> None:
-        """Allow the owner to update session metadata."""
+    def _open_session_editor(session_obj: SessionDTO) -> None:
+        """Allow the owner to edit both metadata and evidences."""
 
         current_username = _get_current_username()
         if not current_username or session_obj.username.lower() != current_username.lower():
             Messagebox.showwarning("Sesión", "Solo el usuario que creó la sesión puede editarla.")
             return
 
+        session_payload, evidences, error = controller.load_session_for_edit(session_obj.sessionId or 0)
+        if error:
+            Messagebox.showerror("Sesión", error)
+            return
+
+        editor_state: Dict[str, object] = {
+            "session": session_payload or session_obj,
+            "evidences": evidences,
+        }
+
         win = tb.Toplevel(root)
-        win.title("Editar sesión")
+        win.title(f"Editar sesión · {session_obj.name}")
         win.transient(root)
         win.grab_set()
-        frm = tb.Frame(win, padding=16)
-        frm.pack(fill=BOTH, expand=YES)
+        win.geometry("940x600")
+        win.minsize(840, 520)
 
-        tb.Label(frm, text="Editar sesión", font=("Segoe UI", 14, "bold")).pack(anchor=W, pady=(0, 12))
+        container = tb.Frame(win, padding=20)
+        container.pack(fill=BOTH, expand=YES)
 
-        name_var = tb.StringVar(value=session_obj.name)
-        url_var_edit = tb.StringVar(value=session_obj.initialUrl)
-        doc_var_edit = tb.StringVar(value=session_obj.docxUrl)
-        evid_var_edit = tb.StringVar(value=session_obj.evidencesUrl)
+        tb.Label(container, text="🎨 Editar sesión de pruebas", font=("Segoe UI", 16, "bold")).pack(anchor=W)
+        tb.Label(
+            container,
+            text="Actualiza los datos generales y administra las evidencias capturadas.",
+            font=("Segoe UI", 10),
+        ).pack(anchor=W, pady=(4, 16))
 
-        def _build_row(label: str, variable: tk.StringVar) -> None:
-            row = tb.Frame(frm)
-            row.pack(fill=X, pady=4)
-            tb.Label(row, text=label, font=("Segoe UI", 10, "bold"), width=18, anchor=E).pack(side=LEFT)
-            tb.Entry(row, textvariable=variable).pack(side=LEFT, fill=X, expand=YES, padx=(8, 0))
+        local_status = tb.StringVar(value="Selecciona una evidencia para editarla.")
 
-        _build_row("Nombre", name_var)
-        _build_row("URL inicial", url_var_edit)
-        _build_row("Documento", doc_var_edit)
-        _build_row("Carpeta evidencias", evid_var_edit)
+        metadata_card = tb.Labelframe(container, text="Datos de la sesión", padding=16, bootstyle=INFO)
+        metadata_card.pack(fill=X)
+        metadata_card.columnconfigure(1, weight=1)
 
-        def _accept() -> None:
-            """Persist the changes and refresh the dashboard."""
+        name_var = tb.StringVar(value=(editor_state["session"].name if isinstance(editor_state["session"], SessionDTO) else session_obj.name))
+        url_var_edit = tb.StringVar(value=(editor_state["session"].initialUrl if isinstance(editor_state["session"], SessionDTO) else session_obj.initialUrl))
+        doc_var_edit = tb.StringVar(value=(editor_state["session"].docxUrl if isinstance(editor_state["session"], SessionDTO) else session_obj.docxUrl))
+        evid_var_edit = tb.StringVar(value=(editor_state["session"].evidencesUrl if isinstance(editor_state["session"], SessionDTO) else session_obj.evidencesUrl))
 
-            error = controller.update_session_details(
+        def _build_row(parent: tb.Frame, label: str, variable: tk.StringVar, row_index: int) -> None:
+            """Render a labelled entry row within the session metadata card."""
+
+            tb.Label(parent, text=label, font=("Segoe UI", 10, "bold")).grid(row=row_index, column=0, sticky=W, pady=4)
+            tb.Entry(parent, textvariable=variable).grid(row=row_index, column=1, sticky=EW, padx=(12, 0), pady=4)
+
+        _build_row(metadata_card, "Nombre", name_var, 0)
+        _build_row(metadata_card, "URL inicial", url_var_edit, 1)
+        _build_row(metadata_card, "Documento", doc_var_edit, 2)
+        _build_row(metadata_card, "Carpeta evidencias", evid_var_edit, 3)
+
+        def _reload_session_data(update_form: bool = False) -> None:
+            """Refresh metadata and evidence listings from the controller."""
+
+            refreshed_session, refreshed_evidences, refresh_error = controller.load_session_for_edit(session_obj.sessionId or 0)
+            if refresh_error:
+                local_status.set(refresh_error)
+                return
+            editor_state["session"] = refreshed_session or editor_state["session"]
+            editor_state["evidences"] = refreshed_evidences
+            if update_form and isinstance(editor_state["session"], SessionDTO):
+                session_meta = editor_state["session"]
+                name_var.set(session_meta.name)
+                url_var_edit.set(session_meta.initialUrl)
+                doc_var_edit.set(session_meta.docxUrl)
+                evid_var_edit.set(session_meta.evidencesUrl)
+            _render_evidences()
+
+        def _save_session_changes() -> None:
+            """Persist metadata updates and refresh the dashboard."""
+
+            error_msg = controller.update_session_details(
                 session_obj.sessionId or 0,
                 name_var.get().strip(),
                 url_var_edit.get().strip(),
                 doc_var_edit.get().strip(),
                 evid_var_edit.get().strip(),
             )
-            if error:
-                Messagebox.showerror("Sesión", error)
+            if error_msg:
+                Messagebox.showerror("Sesión", error_msg)
                 return
             status.set("✏️ Sesión actualizada correctamente.")
-            win.destroy()
+            local_status.set("Sesión actualizada correctamente.")
+            _reload_session_data(update_form=True)
             _refresh_sessions_table()
 
-        btns = tb.Frame(frm)
-        btns.pack(fill=X, pady=(16, 0))
-        tb.Button(btns, text="Cancelar", command=win.destroy, bootstyle=SECONDARY, width=14).pack(side=RIGHT, padx=(8, 0))
-        tb.Button(btns, text="Guardar cambios", command=_accept, bootstyle=PRIMARY, width=18).pack(side=RIGHT)
+        btns = tb.Frame(metadata_card)
+        btns.grid(row=4, column=0, columnspan=2, sticky=E, pady=(12, 0))
+        tb.Button(btns, text="Cancelar", command=win.destroy, style="CartoonGhost.TButton", compound=LEFT).pack(side=RIGHT, padx=(8, 0))
+        tb.Button(btns, text="Guardar cambios", command=_save_session_changes, style="CartoonAccent.TButton", compound=LEFT).pack(side=RIGHT)
+
+        evidence_card = tb.Labelframe(container, text="Evidencias registradas", padding=16, bootstyle=INFO)
+        evidence_card.pack(fill=BOTH, expand=YES, pady=(20, 0))
+        evidence_card.columnconfigure(0, weight=1)
+
+        columns = ("#", "Archivo", "Descripción", "Notas", "Actualizado")
+        evidence_tree = ttk.Treeview(evidence_card, columns=columns, show="headings", height=8)
+        evidence_tree.heading("#", text="#")
+        evidence_tree.heading("Archivo", text="Archivo")
+        evidence_tree.heading("Descripción", text="Descripción")
+        evidence_tree.heading("Notas", text="Notas")
+        evidence_tree.heading("Actualizado", text="Actualizado")
+        evidence_tree.column("#", width=50, anchor="center")
+        evidence_tree.column("Archivo", width=220, anchor="w")
+        evidence_tree.column("Descripción", width=220, anchor="w")
+        evidence_tree.column("Notas", width=240, anchor="w")
+        evidence_tree.column("Actualizado", width=160, anchor="center")
+        evidence_tree.grid(row=0, column=0, sticky=NSEW)
+
+        evidence_card.rowconfigure(0, weight=1)
+        vsb = ttk.Scrollbar(evidence_card, orient="vertical", command=evidence_tree.yview)
+        evidence_tree.configure(yscrollcommand=vsb.set)
+        vsb.grid(row=0, column=1, sticky=NS)
+
+        evidence_registry: Dict[str, SessionEvidenceDTO] = {}
+
+        def _render_evidences() -> None:
+            """Render the evidence rows inside the editor."""
+
+            evidence_tree.delete(*evidence_tree.get_children())
+            evidence_registry.clear()
+            items: List[SessionEvidenceDTO] = []
+            if isinstance(editor_state.get("evidences"), list):
+                items = [item for item in editor_state["evidences"] if isinstance(item, SessionEvidenceDTO)]
+            for idx, evidence in enumerate(items, start=1):
+                row_id = str(evidence.evidenceId or idx)
+                evidence_registry[row_id] = evidence
+                notes_parts = [part for part in (evidence.considerations, evidence.observations) if part]
+                evidence_tree.insert(
+                    "",
+                    "end",
+                    iid=row_id,
+                    values=(
+                        idx,
+                        evidence.fileName or Path(evidence.filePath).name,
+                        evidence.description,
+                        " · ".join(notes_parts),
+                        format_timestamp(evidence.updatedAt),
+                    ),
+                )
+            if not items:
+                local_status.set("No hay evidencias registradas en la sesión.")
+
+        def _open_evidence_editor(evidence: SessionEvidenceDTO) -> None:
+            """Display a modal dialog to edit an evidence entry."""
+
+            editor = tb.Toplevel(win)
+            editor.title(f"Editar evidencia · {evidence.fileName}")
+            editor.transient(win)
+            editor.grab_set()
+            frm = tb.Frame(editor, padding=16)
+            frm.pack(fill=BOTH, expand=YES)
+
+            file_var = tb.StringVar(value=evidence.filePath)
+            desc_var = tb.StringVar(value=evidence.description)
+            cons_var = tb.StringVar(value=evidence.considerations)
+            obs_var = tb.StringVar(value=evidence.observations)
+
+            def _build_input(label: str, variable: tk.StringVar, row_index: int, with_browser: bool = False) -> None:
+                """Render an entry row within the evidence editor modal."""
+
+                row = tb.Frame(frm)
+                row.pack(fill=X, pady=4)
+                tb.Label(row, text=label, font=("Segoe UI", 10, "bold"), width=16, anchor=E).pack(side=LEFT)
+                entry = tb.Entry(row, textvariable=variable, width=64)
+                entry.pack(side=LEFT, fill=X, expand=YES, padx=(10, 0))
+                if with_browser:
+                    def _browse() -> None:
+                        """Open a file dialog to select a replacement path."""
+
+                        initial_dir = None
+                        try:
+                            initial_dir = str(Path(variable.get()).parent)
+                        except Exception:
+                            initial_dir = None
+                        selected = filedialog.askopenfilename(initialdir=initial_dir)
+                        if selected:
+                            variable.set(selected)
+
+                    tb.Button(row, text="Buscar", style="CartoonGhost.TButton", command=_browse, width=10).pack(side=LEFT, padx=(10, 0))
+
+            _build_input("Archivo", file_var, 0, with_browser=True)
+            _build_input("Descripción", desc_var, 1)
+            _build_input("Consideraciones", cons_var, 2)
+            _build_input("Observaciones", obs_var, 3)
+
+            def _persist() -> None:
+                """Validate and persist evidence changes."""
+
+                new_path_raw = file_var.get().strip()
+                if not new_path_raw:
+                    Messagebox.showwarning("Evidencia", "Selecciona un archivo para la evidencia.")
+                    return
+                new_path = Path(new_path_raw)
+                error_msg = controller.update_session_evidence_from_dashboard(
+                    session_obj.sessionId or 0,
+                    evidence.evidenceId or 0,
+                    new_path,
+                    desc_var.get().strip(),
+                    cons_var.get().strip(),
+                    obs_var.get().strip(),
+                )
+                if error_msg:
+                    Messagebox.showerror("Evidencia", error_msg)
+                    return
+                editor.destroy()
+                status.set("🎨 Evidencia actualizada correctamente.")
+                local_status.set("Evidencia actualizada correctamente.")
+                _reload_session_data(update_form=False)
+                _refresh_sessions_table()
+
+            buttons_row = tb.Frame(frm)
+            buttons_row.pack(fill=X, pady=(12, 0))
+            tb.Button(buttons_row, text="Cancelar", style="CartoonGhost.TButton", command=editor.destroy, width=14).pack(side=RIGHT, padx=(8, 0))
+            tb.Button(buttons_row, text="Guardar", style="CartoonAccent.TButton", command=_persist, width=14).pack(side=RIGHT)
+
+        def _edit_selected_evidence() -> None:
+            """Open the editor for the currently selected evidence."""
+
+            selection = evidence_tree.selection()
+            if not selection:
+                Messagebox.showinfo("Evidencia", "Selecciona una evidencia para editarla.")
+                return
+            evidence = evidence_registry.get(selection[0])
+            if not evidence:
+                Messagebox.showerror("Evidencia", "No fue posible cargar la evidencia seleccionada.")
+                return
+            _open_evidence_editor(evidence)
+
+        evidence_actions = tb.Frame(evidence_card)
+        evidence_actions.grid(row=1, column=0, columnspan=2, sticky=E, pady=(12, 0))
+        tb.Button(
+            evidence_actions,
+            text="Editar evidencia",
+            style="CartoonAccent.TButton",
+            command=_edit_selected_evidence,
+            compound=LEFT,
+        ).pack(side=RIGHT)
+
+        _render_evidences()
+
+        tb.Label(container, textvariable=local_status, anchor=W, bootstyle=SECONDARY, padding=(12, 6)).pack(fill=X, pady=(16, 0))
 
     def _confirm_delete_session(session_obj) -> None:
         """Ask for confirmation before removing the session."""
@@ -367,12 +597,11 @@ def build_pruebas_view(
         session_obj = sessions_registry.get(row_id)
         if not session_obj:
             return
-        action = action_labels[action_index]
-        if action == "Ver":
+        if action_index == 0:
             _view_session_details(session_obj)
-        elif action == "Editar":
-            _prompt_edit_session(session_obj)
-        elif action == "Eliminar":
+        elif action_index == 1:
+            _open_session_editor(session_obj)
+        elif action_index == 2:
             _confirm_delete_session(session_obj)
         else:
             _handle_download(session_obj)

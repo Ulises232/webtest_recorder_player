@@ -230,6 +230,19 @@ class MainController:
             return str(exc)
         return None
 
+    def load_session_for_edit(
+        self,
+        session_id: int,
+    ) -> Tuple[Optional[SessionDTO], List[SessionEvidenceDTO], Optional[str]]:
+        """Return a session and its evidences for dashboard editing."""
+
+        username = self.get_authenticated_username()
+        try:
+            session, evidences = self._session_service.get_session_with_evidences(session_id, username)
+        except SessionServiceError as exc:
+            return None, [], str(exc)
+        return session, evidences, None
+
     def update_session_evidence(
         self,
         evidence_id: int,
@@ -242,6 +255,32 @@ class MainController:
 
         try:
             self._session_service.update_evidence(evidence_id, file_path, description, considerations, observations)
+        except SessionServiceError as exc:
+            return str(exc)
+        return None
+
+    def update_session_evidence_from_dashboard(
+        self,
+        session_id: int,
+        evidence_id: int,
+        file_path: Path,
+        description: str,
+        considerations: str,
+        observations: str,
+    ) -> Optional[str]:
+        """Persist evidence edits performed from the session dashboard."""
+
+        username = self.get_authenticated_username()
+        try:
+            self._session_service.update_session_evidence_details(
+                session_id,
+                evidence_id,
+                file_path,
+                description,
+                considerations,
+                observations,
+                username,
+            )
         except SessionServiceError as exc:
             return str(exc)
         return None
