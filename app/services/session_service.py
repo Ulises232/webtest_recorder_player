@@ -97,12 +97,17 @@ class SessionService:
             return
         updated_at = self._utcnow()
         session = self._active_state.session
+        refreshed: Optional[SessionDTO] = None
         try:
             self._session_dao.update_outputs(session.sessionId or 0, docx_url, evidences_url, updated_at)
+            refreshed = self._session_dao.get_session(session.sessionId or 0)
         except SessionDAOError as exc:
-            logger.error("No se pudieron actualizar las rutas de la sesión %s: %s", session.sessionId, exc)
+            logger.error(
+                "No se pudieron actualizar o refrescar los datos de la sesión %s: %s",
+                session.sessionId,
+                exc,
+            )
             raise SessionServiceError(str(exc)) from exc
-        refreshed = self._session_dao.get_session(session.sessionId or 0)
         if refreshed:
             self._active_state.session = refreshed
 
@@ -274,6 +279,12 @@ class SessionService:
             logger.error("No fue posible finalizar la sesión %s: %s", state.session.sessionId, exc)
             raise SessionServiceError(str(exc)) from exc
 
-        refreshed = self._session_dao.get_session(state.session.sessionId or 0)
-        self._active_state = None
+        refreshed: Optional[SessionDTO] = None
+        try:
+            refreshed = self._session_dao.get_session(state.session.sessionId or 0)
+        except SessionDAOError as exc:
+            logger.error("No fue posible refrescar la sesión %s: %s", state.session.sessionId, exc)
+            raise SessionServiceError(str(exc)) from exc
+        finally:
+            self._active_state = None
         return refreshed or state.session
