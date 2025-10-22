@@ -639,7 +639,8 @@ def build_pruebas_view(
             btn_limpiar.configure(state="normal")
         except Exception:
             pass
-    btns = tb.Frame(frame_pruebas, padding=(16,6)); btns.pack(fill=X)
+    btns = tb.Frame(parent, padding=(16, 6))
+    btns.pack(fill=tk.X)
     # --- Helpers de limpieza y selección ---
     def _clear_evidence_for(base_name: str, also_clear_session: bool = True):
         """Limpiar solo el estado en memoria manteniendo evidencias en disco."""
