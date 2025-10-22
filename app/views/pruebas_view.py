@@ -534,7 +534,7 @@ def build_pruebas_view(
             meta_desc["consideraciones"] = meta_out.get("consideraciones","")
             meta_desc["observacion"]     = meta_out.get("observaciones","")
         except Exception as e:
-            Messagebox.show_warning("Editor",f"Editor no disponible: {e}")
+            Messagebox.showwarning("Editor", f"Editor no disponible: {e}")
     
         step = {"cmd": "snap_region_all", "shots": [str(out_path)]}
         if meta_desc["descripcion"]: step["desc"] = meta_desc["descripcion"]
@@ -639,8 +639,8 @@ def build_pruebas_view(
             btn_limpiar.configure(state="normal")
         except Exception:
             pass
-    btns = tb.Frame(parent, padding=(16, 6))
-    btns.pack(fill=tk.X)
+    controls_bar = tb.Frame(parent, padding=(16, 6))
+    controls_bar.pack(fill=tk.X)
     # --- Helpers de limpieza y selección ---
     def _clear_evidence_for(base_name: str, also_clear_session: bool = True):
         """Limpiar solo el estado en memoria manteniendo evidencias en disco."""
@@ -675,19 +675,19 @@ def build_pruebas_view(
         else:
             Messagebox.showerror("Navegador",f"No se pudo abrir Chrome: {msg}")
     
-    tb.Button(btns, text="🔗 Abrir navegador", command=abrir_nav, bootstyle=PRIMARY, width=18).pack(side=LEFT, padx=(0,8))
-    tb.Button(btns, text="🖥️ Cambiar pantalla…", command=reset_monitor_selection, bootstyle=SECONDARY, width=20).pack(side=LEFT, padx=8)
-    tb.Button(btns, text="🖥️ SNAP externo", command=snap_externo_monitor, bootstyle=INFO, width=16).pack(side=LEFT, padx=8)
-    tb.Button(btns, text="📐 SNAP región", command=snap_region_all, bootstyle=INFO, width=16).pack(side=LEFT, padx=8)
+    tb.Button(controls_bar, text="🔗 Abrir navegador", command=abrir_nav, bootstyle=PRIMARY, width=18).pack(side=LEFT, padx=(0,8))
+    tb.Button(controls_bar, text="🖥️ Cambiar pantalla…", command=reset_monitor_selection, bootstyle=SECONDARY, width=20).pack(side=LEFT, padx=8)
+    tb.Button(controls_bar, text="🖥️ SNAP externo", command=snap_externo_monitor, bootstyle=INFO, width=16).pack(side=LEFT, padx=8)
+    tb.Button(controls_bar, text="📐 SNAP región", command=snap_region_all, bootstyle=INFO, width=16).pack(side=LEFT, padx=8)
     
     ask_always = tk.BooleanVar(value=False)
     def _ask_switch():
         """Auto-generated docstring for `_ask_switch`."""
         if ask_always.get(): _monitor_index["val"] = None
-    tb.Checkbutton(btns, text="Preguntar pantalla cada vez", variable=ask_always, bootstyle="round-toggle", command=_ask_switch).pack(side=LEFT, padx=8)
-    tb.Button(btns, text="📥 Importar Confluence", command=importar_confluence, bootstyle=SUCCESS, width=22).pack(side=LEFT, padx=8)
-    btn_limpiar = tb.Button(btns, text="Finalizar Pruebas",  command=limpiar_cache, bootstyle=DANGER, width=16)
+    tb.Checkbutton(controls_bar, text="Preguntar pantalla cada vez", variable=ask_always, bootstyle="round-toggle", command=_ask_switch).pack(side=LEFT, padx=8)
+    tb.Button(controls_bar, text="📥 Importar Confluence", command=importar_confluence, bootstyle=SUCCESS, width=22).pack(side=LEFT, padx=8)
+    btn_limpiar = tb.Button(controls_bar, text="Finalizar Pruebas",  command=limpiar_cache, bootstyle=DANGER, width=16)
     btn_limpiar.pack(side=RIGHT, padx=(8,0))
-    tb.Button(btns, text="✅ DONE", command=generar_doc, bootstyle=WARNING, width=12).pack(side=RIGHT)
-    
-    return PruebasViewContext(btns)
+    tb.Button(controls_bar, text="✅ DONE", command=generar_doc, bootstyle=WARNING, width=12).pack(side=RIGHT)
+
+    return PruebasViewContext(controls_bar)
