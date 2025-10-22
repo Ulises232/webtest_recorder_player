@@ -3,6 +3,7 @@
 
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 import tkinter as tk
@@ -104,6 +105,24 @@ from utils.confluence_ui import import_steps_to_confluence
 from utils.capture_editor import open_capture_editor
 
 controller = MainController()
+
+
+def _format_elapsed(seconds: Optional[int]) -> str:
+    """Convert a number of seconds into HH:MM:SS format."""
+
+    total = max(0, int(seconds or 0))
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    secs = total % 60
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def _format_timestamp(value: Optional[datetime]) -> str:
+    """Return a human friendly timestamp representation."""
+
+    if not value:
+        return ""
+    return value.astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _prompt_login(root: tb.Window) -> Optional[AuthenticationResult]:
@@ -1330,15 +1349,303 @@ def run_gui():
                 _clear_evidence_for(old_base, also_clear_session=True)
                 status.set(f"🧹 Historial limpiado. Evidencias en disco conservadas para: {old_base}")
             prev_base["val"] = new_base
-        base_var.trace_add("write", _on_base_change)
+
+    base_var.trace_add("write", _on_base_change)
+    doc_var.trace_add("write", _update_session_outputs)
+    ev_var.trace_add("write", _update_session_outputs)
 
     status = tb.StringVar(value="Listo.")
     status_bar = tb.Label(app, textvariable=status, bootstyle=INFO, anchor=W, padding=(16,6)); status_bar.pack(fill=X)
 
     session_saved = {"val": False}
 
-    session = {"title": "Incidencia", "steps": []}
+    session = {"title": "Incidencia", "steps": [], "sessionId": None}
+    session_state = {"active": False, "paused": False, "timerJob": None}
+    timer_var = tk.StringVar(value=_format_elapsed(0))
+    evidence_tree_ref: dict[str, Optional[ttk.Treeview]] = {"tree": None}
     _monitor_index = {"val": None}
+
+    def _cancel_timer() -> None:
+        """Stop the scheduled timer update if present."""
+
+        job = session_state.get("timerJob")
+        if job is None:
+            return
+        try:
+            app.after_cancel(job)
+        except Exception:
+            pass
+        session_state["timerJob"] = None
+
+    def _refresh_timer_label() -> None:
+        """Update the timer label based on the service value."""
+
+        timer_var.set(_format_elapsed(controller.get_session_elapsed_seconds()))
+
+    def _schedule_timer_tick() -> None:
+        """Reschedule the timer update when the session is running."""
+
+        _cancel_timer()
+        _refresh_timer_label()
+        if session_state["active"] and not session_state["paused"]:
+            session_state["timerJob"] = app.after(1000, _schedule_timer_tick)
+
+    def _refresh_evidence_tree() -> None:
+        """Render the evidence rows in the treeview widget."""
+
+        tree = evidence_tree_ref.get("tree")
+        if not isinstance(tree, ttk.Treeview):
+            return
+        tree.delete(*tree.get_children())
+        for idx, step in enumerate(session.get("steps", []), start=1):
+            shots = step.get("shots") or [""]
+            primary_shot = shots[0] if shots else ""
+            values = (
+                idx,
+                step.get("cmd", ""),
+                os.path.basename(primary_shot) if primary_shot else "",
+                step.get("desc", ""),
+                _format_timestamp(step.get("createdAt")),
+                _format_elapsed(step.get("elapsedSincePrevious")),
+            )
+            tree.insert("", "end", iid=str(idx - 1), values=values)
+
+    def _ensure_session_active(show_warning: bool = True) -> bool:
+        """Check that a session is active and optionally show a warning."""
+
+        if session_state["active"]:
+            return True
+        if show_warning:
+            Messagebox.showwarning("Sesión", "Inicia una sesión de evidencias antes de continuar.")
+        return False
+
+    def _ensure_session_running() -> bool:
+        """Verify that the session is active and not paused."""
+
+        if not _ensure_session_active(True):
+            return False
+        if session_state["paused"]:
+            Messagebox.showwarning("Sesión", "Reanuda la sesión para continuar capturando evidencias.")
+            return False
+        return True
+
+    def _update_session_outputs(*_args: object) -> None:
+        """Propagate the current output paths to the controller."""
+
+        if not session_state["active"]:
+            return
+        error = controller.update_active_session_outputs(doc_var.get(), ev_var.get())
+        if error:
+            status.set(f"⚠️ {error}")
+
+    def _show_elapsed_message() -> None:
+        """Display the elapsed time in a dialog."""
+
+        _refresh_timer_label()
+        Messagebox.showinfo("Sesión", f"Tiempo transcurrido: {_format_elapsed(controller.get_session_elapsed_seconds())}")
+
+    def start_evidence_session() -> None:
+        """Start a new evidence session and reset the UI state."""
+
+        if session_state["active"]:
+            Messagebox.showwarning("Sesión", "Ya hay una sesión activa en curso.")
+            return
+
+        base_name = controller.slugify_for_windows(base_var.get() or "reporte") or "reporte"
+        session_title = (base_var.get() or "Incidencia").strip() or base_name
+        session["title"] = session_title
+
+        doc_path = Path(doc_var.get())
+        evidence_path = Path(ev_var.get())
+        try:
+            doc_path.parent.mkdir(parents=True, exist_ok=True)
+            evidence_path.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            Messagebox.showerror("Sesión", f"No fue posible preparar las carpetas de salida: {exc}")
+            return
+
+        session_obj, error = controller.begin_evidence_session(
+            session_title,
+            (url_var.get() or controller.DEFAULT_URL).strip() or controller.DEFAULT_URL,
+            str(doc_path),
+            str(evidence_path),
+        )
+        if error:
+            Messagebox.showerror("Sesión", error)
+            return
+
+        session_state.update({"active": True, "paused": False, "timerJob": None})
+        session["sessionId"] = session_obj.sessionId if session_obj else None
+        session["steps"].clear()
+        session_saved["val"] = False
+        _refresh_evidence_tree()
+        _schedule_timer_tick()
+        status.set("⏱️ Sesión iniciada.")
+        _update_session_outputs()
+        try:
+            btn_session_start.configure(state="disabled")
+            btn_session_pause.configure(state="normal", text="Pausar sesión")
+            btn_session_finish.configure(state="normal")
+        except Exception:
+            pass
+
+    def pause_or_resume_session() -> None:
+        """Toggle the pause state for the active session."""
+
+        if not _ensure_session_active(True):
+            return
+        if session_state["paused"]:
+            error = controller.resume_evidence_session()
+            if error:
+                Messagebox.showerror("Sesión", error)
+                return
+            session_state["paused"] = False
+            status.set("▶️ Sesión reanudada.")
+            btn_session_pause.configure(text="Pausar sesión")
+            _schedule_timer_tick()
+            return
+
+        error = controller.pause_evidence_session()
+        if error:
+            Messagebox.showerror("Sesión", error)
+            return
+        session_state["paused"] = True
+        status.set("⏸️ Sesión en pausa.")
+        _cancel_timer()
+        _refresh_timer_label()
+        btn_session_pause.configure(text="Reanudar sesión")
+
+    def finish_evidence_session() -> None:
+        """Finalize the active session and reset controls."""
+
+        if not session_state["active"]:
+            Messagebox.showwarning("Sesión", "No hay una sesión activa.")
+            return
+        if session_state["paused"]:
+            Messagebox.showwarning("Sesión", "Reanuda la sesión antes de finalizarla.")
+            return
+        if not Messagebox.askyesno("Sesión", "¿Deseas finalizar la sesión actual?"):
+            return
+
+        session_obj, error = controller.finalize_evidence_session()
+        if error:
+            Messagebox.showerror("Sesión", error)
+            return
+
+        session_state.update({"active": False, "paused": False, "timerJob": None})
+        _cancel_timer()
+        final_elapsed = session_obj.durationSeconds if session_obj else controller.get_session_elapsed_seconds()
+        timer_var.set(_format_elapsed(final_elapsed))
+        status.set("✅ Sesión finalizada.")
+        try:
+            btn_session_start.configure(state="normal")
+            btn_session_pause.configure(state="disabled", text="Pausar sesión")
+            btn_session_finish.configure(state="disabled")
+        except Exception:
+            pass
+
+    def edit_selected_evidence() -> None:
+        """Open the capture editor for the selected evidence."""
+
+        if not _ensure_session_active(True):
+            return
+        tree = evidence_tree_ref.get("tree")
+        if not isinstance(tree, ttk.Treeview):
+            return
+        selection = tree.selection()
+        if not selection:
+            Messagebox.showwarning("Evidencias", "Selecciona una evidencia para editarla.")
+            return
+        try:
+            index = int(selection[0])
+        except ValueError:
+            Messagebox.showwarning("Evidencias", "La evidencia seleccionada no es válida.")
+            return
+        if index < 0 or index >= len(session.get("steps", [])):
+            Messagebox.showwarning("Evidencias", "No se encontró la evidencia seleccionada.")
+            return
+
+        step = session["steps"][index]
+        shots = step.get("shots") or []
+        if not shots:
+            Messagebox.showwarning("Evidencias", "La evidencia no tiene una imagen asociada.")
+            return
+
+        image_path = Path(shots[0])
+        meta_in = {
+            "descripcion": step.get("desc", ""),
+            "consideraciones": step.get("consideraciones", ""),
+            "observaciones": step.get("observacion", ""),
+        }
+        try:
+            edited_path, meta_out = open_capture_editor(str(image_path), meta_in)
+        except Exception as exc:
+            Messagebox.showerror("Editor", f"No fue posible abrir el editor: {exc}")
+            return
+
+        new_path = Path(edited_path) if edited_path else image_path
+        shots[0] = str(new_path)
+        step["desc"] = meta_out.get("descripcion", "") or ""
+        step["consideraciones"] = meta_out.get("consideraciones", "") or ""
+        step["observacion"] = meta_out.get("observaciones", "") or ""
+
+        evidence_id = step.get("id")
+        if evidence_id:
+            error = controller.update_session_evidence(
+                int(evidence_id),
+                new_path,
+                step.get("desc", ""),
+                step.get("consideraciones", ""),
+                step.get("observacion", ""),
+            )
+            if error:
+                Messagebox.showerror("Sesión", error)
+                return
+
+        session_saved["val"] = False
+        _refresh_evidence_tree()
+        status.set("✏️ Evidencia actualizada.")
+
+    session_card = tb.Labelframe(body, text="Sesión de evidencias", bootstyle=SECONDARY, padding=12)
+    session_card.pack(fill=BOTH, expand=YES, pady=(0,12))
+    session_card.columnconfigure(0, weight=1)
+
+    timer_row = tb.Frame(session_card)
+    timer_row.pack(fill=X, pady=(0,10))
+    tb.Label(timer_row, text="Tiempo transcurrido:", font=("Segoe UI", 11, "bold")).pack(side=LEFT)
+    tb.Label(timer_row, textvariable=timer_var, font=("Consolas", 16, "bold"), bootstyle=SUCCESS).pack(side=LEFT, padx=(12, 0))
+    tb.Button(timer_row, text="🕒 Mostrar tiempo", command=_show_elapsed_message, bootstyle=SECONDARY).pack(side=LEFT, padx=10)
+    btn_session_finish = tb.Button(timer_row, text="Finalizar sesión", command=finish_evidence_session, bootstyle=DANGER, state="disabled")
+    btn_session_finish.pack(side=RIGHT, padx=(0, 0))
+    btn_session_pause = tb.Button(timer_row, text="Pausar sesión", command=pause_or_resume_session, bootstyle=WARNING, state="disabled")
+    btn_session_pause.pack(side=RIGHT, padx=10)
+    btn_session_start = tb.Button(timer_row, text="Iniciar sesión", command=start_evidence_session, bootstyle=SUCCESS)
+    btn_session_start.pack(side=RIGHT, padx=10)
+
+    evidence_frame = tb.Frame(session_card)
+    evidence_frame.pack(fill=BOTH, expand=YES)
+    columns = ("#", "Tipo", "Archivo", "Descripción", "Creado", "Δ desde anterior")
+    evidence_tree = ttk.Treeview(evidence_frame, columns=columns, show="headings", height=8)
+    for col, heading in zip(columns, ("#", "Tipo", "Archivo", "Descripción", "Creado", "Δ desde anterior")):
+        evidence_tree.heading(col, text=heading)
+    evidence_tree.column("#", width=50, anchor="center")
+    evidence_tree.column("Tipo", width=120, anchor="w")
+    evidence_tree.column("Archivo", width=220, anchor="w")
+    evidence_tree.column("Descripción", width=280, anchor="w")
+    evidence_tree.column("Creado", width=160, anchor="center")
+    evidence_tree.column("Δ desde anterior", width=140, anchor="center")
+    vsb_evidence = ttk.Scrollbar(evidence_frame, orient="vertical", command=evidence_tree.yview)
+    evidence_tree.configure(yscrollcommand=vsb_evidence.set)
+    evidence_tree.pack(side=LEFT, fill=BOTH, expand=YES)
+    vsb_evidence.pack(side=RIGHT, fill=Y)
+    evidence_tree.bind("<Double-1>", lambda _event: edit_selected_evidence())
+    _bind_mousewheel(evidence_tree, evidence_tree.yview)
+    evidence_tree_ref["tree"] = evidence_tree
+    _refresh_evidence_tree()
+
+    evidence_actions = tb.Frame(session_card)
+    evidence_actions.pack(fill=X, pady=(8,0))
+    tb.Button(evidence_actions, text="Editar evidencia", command=edit_selected_evidence, bootstyle=PRIMARY).pack(side=LEFT)
 
     def ensure_mss():
         """Auto-generated docstring for `ensure_mss`."""
@@ -1386,7 +1693,10 @@ def run_gui():
 
     def snap_externo_monitor():
         """Auto-generated docstring for `snap_externo_monitor`."""
-        if not ensure_mss(): return
+        if not _ensure_session_running():
+            return
+        if not ensure_mss():
+            return
         import mss, mss.tools
         with mss.mss() as sct:
             monitors, idx = select_monitor(sct)
@@ -1419,18 +1729,32 @@ def run_gui():
         if meta_desc["descripcion"]: step["desc"] = meta_desc["descripcion"]
         if meta_desc["consideraciones"]: step["consideraciones"] = meta_desc["consideraciones"]
         if meta_desc["observacion"]: step["observacion"] = meta_desc["observacion"]
-        session["steps"].append(step); status.set(f"🖥️ SNAP externo agregado (monitor {idx})")
-        try:
-            tipo = step.get("cmd", "snap")
-            archivo = os.path.basename((step.get("shots") or [""])[0])
-            hist.insert("", "end", iid=len(session["steps"])-1, values=(tipo, archivo))
-        except Exception:
-            pass
+        session["steps"].append(step)
+        evidence, error = controller.register_session_evidence(
+            Path(step["shots"][0]),
+            step.get("desc", ""),
+            step.get("consideraciones", ""),
+            step.get("observacion", ""),
+        )
+        if error:
+            Messagebox.showerror("Sesión", error)
+        elif evidence:
+            step["id"] = evidence.evidenceId
+            step["createdAt"] = evidence.createdAt
+            step["elapsedSinceStart"] = evidence.elapsedSinceSessionStartSeconds
+            step["elapsedSincePrevious"] = evidence.elapsedSincePreviousEvidenceSeconds
+        session_saved["val"] = False
+        _refresh_evidence_tree()
+        _schedule_timer_tick()
+        status.set(f"🖥️ SNAP externo agregado (monitor {idx})")
 
 
     def snap_region_all():
         """Auto-generated docstring for `snap_region_all`."""
-        if not ensure_mss(): return
+        if not _ensure_session_running():
+            return
+        if not ensure_mss():
+            return
         import mss, mss.tools
         with mss.mss() as sct:
             desktop = sct.monitors[0]
@@ -1466,13 +1790,24 @@ def run_gui():
         if meta_desc["descripcion"]: step["desc"] = meta_desc["descripcion"]
         if meta_desc["consideraciones"]: step["consideraciones"] = meta_desc["consideraciones"]
         if meta_desc["observacion"]: step["observacion"] = meta_desc["observacion"]
-        session["steps"].append(step); status.set("📐 SNAP región (todas) agregado")
-        try:
-            tipo = step.get("cmd", "snap")
-            archivo = os.path.basename((step.get("shots") or [""])[0])
-            hist.insert("", "end", iid=len(session["steps"])-1, values=(tipo, archivo))
-        except Exception:
-            pass
+        session["steps"].append(step)
+        evidence, error = controller.register_session_evidence(
+            Path(step["shots"][0]),
+            step.get("desc", ""),
+            step.get("consideraciones", ""),
+            step.get("observacion", ""),
+        )
+        if error:
+            Messagebox.showerror("Sesión", error)
+        elif evidence:
+            step["id"] = evidence.evidenceId
+            step["createdAt"] = evidence.createdAt
+            step["elapsedSinceStart"] = evidence.elapsedSinceSessionStartSeconds
+            step["elapsedSincePrevious"] = evidence.elapsedSincePreviousEvidenceSeconds
+        session_saved["val"] = False
+        _refresh_evidence_tree()
+        _schedule_timer_tick()
+        status.set("📐 SNAP región (todas) agregado")
 
     def generar_doc():
         """Auto-generated docstring for `generar_doc`."""
@@ -1480,7 +1815,10 @@ def run_gui():
             if not Messagebox.askyesno("Reporte","No hay pasos. ¿Generar documento vacío?"): return
         outp = Path(doc_var.get()); outp.parent.mkdir(parents=True, exist_ok=True)
         build_word(session.get("title"), session["steps"], str(outp))
-        Messagebox.showinfo(f"Reporte generado:\n{outp}", f"Reporte Guardado En: \n{outp}"); status.set("✅ Reporte generado"); session_saved["val"]=True; 
+        _update_session_outputs()
+        Messagebox.showinfo(f"Reporte generado:\n{outp}", f"Reporte Guardado En: \n{outp}")
+        status.set("✅ Reporte generado")
+        session_saved["val"] = True
         btn_limpiar.configure(state="normal")
 
     def modal_confluence_url():
@@ -1559,8 +1897,7 @@ def run_gui():
         if also_clear_session:
             try: session["steps"].clear()
             except Exception: pass
-            try: hist.delete(*hist.get_children())
-            except Exception: pass
+            _refresh_evidence_tree()
         return removed
 
     def reset_monitor_selection():

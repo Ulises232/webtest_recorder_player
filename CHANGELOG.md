@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.0] - 2024-05-30
+### Added
+- Tablas `dbo.recorder_sessions`, `dbo.recorder_session_evidences` y `dbo.recorder_session_pauses` documentadas en `docs/database_schema.md` para registrar sesiones, evidencias y pausas desde la aplicación de escritorio.
+- DAOs, DTOs y el `SessionService` para crear sesiones, capturar evidencias, registrar pausas y calcular los tiempos de duración.
+- Controles en la GUI para iniciar, pausar/reanudar y finalizar sesiones con un cronómetro en vivo, listado de evidencias y botón para editar capturas existentes.
+- Pruebas unitarias de `SessionService` que validan el flujo principal sin requerir conexión a SQL Server.
+
+### Changed
+- La generación de reportes y la edición de evidencias actualizan las rutas de salida en la sesión activa para mantener sincronizado el almacenamiento.
+
 ## [0.5.1] - 2024-05-29
 ### Fixed
 - Normalizada la integración con los cuadros de diálogo para que usen `ttkbootstrap` cuando está disponible y hagan `fallback` a Tkinter, evitando excepciones `AttributeError` y asegurando que los mensajes solo aparezcan en pantalla.
