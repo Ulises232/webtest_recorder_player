@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Dict, Optional
 import os
 import time
 import tkinter as tk
@@ -13,16 +13,31 @@ from tkinter import ttk, filedialog
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *  # noqa: F401,F403
 
+from app.dtos.session_dto import SessionDTO
+
 
 @dataclass
 class PruebasViewContext:
     """Expose helper controls from the tests view."""
 
     buttons: tb.Frame
+    notebook: tb.Notebook
+    dashboardTab: tk.Widget
+    sessionTab: tk.Widget
+
+    def _is_session_tab_active(self) -> bool:
+        """Return whether the evidence workflow tab is active."""
+
+        try:
+            return self.notebook.index(self.notebook.select()) == self.notebook.index(self.sessionTab)
+        except Exception:
+            return False
 
     def show_controls(self) -> None:
         """Display the bottom buttons for the tests workflow."""
 
+        if not self._is_session_tab_active():
+            return
         try:
             self.buttons.pack(fill=tk.X)
         except Exception:
@@ -35,6 +50,32 @@ class PruebasViewContext:
             self.buttons.pack_forget()
         except Exception:
             pass
+
+    def refresh_controls_visibility(self) -> None:
+        """Synchronize the visibility of the bottom buttons with the active tab."""
+
+        if self._is_session_tab_active():
+            self.show_controls()
+        else:
+            self.hide_controls()
+
+    def select_dashboard(self) -> None:
+        """Activate the dashboard tab listing existing sessions."""
+
+        try:
+            self.notebook.select(self.dashboardTab)
+        except Exception:
+            pass
+        self.refresh_controls_visibility()
+
+    def select_session_tab(self) -> None:
+        """Activate the evidence workflow tab."""
+
+        try:
+            self.notebook.select(self.sessionTab)
+        except Exception:
+            pass
+        self.refresh_controls_visibility()
 
 
 def build_pruebas_view(
@@ -53,7 +94,18 @@ def build_pruebas_view(
     """Render the tests workflow inside the given frame."""
 
     Messagebox = messagebox_service
-    
+    status = tb.StringVar(value="Listo.")
+
+    notebook = tb.Notebook(parent, bootstyle="secondary")
+    notebook.pack(fill=BOTH, expand=YES)
+
+    dashboard_tab = tb.Frame(notebook, padding=16)
+    session_tab = tb.Frame(notebook)
+    notebook.add(dashboard_tab, text="Sesiones")
+    notebook.add(session_tab, text="Evidencias")
+
+    parent = session_tab
+
     card1 = tb.Labelframe(parent, text="Datos generales", bootstyle=SECONDARY, padding=12)
     card1.pack(fill=X, pady=(0,12)); card1.columnconfigure(1, weight=1)
     
@@ -76,6 +128,259 @@ def build_pruebas_view(
     
     sessions_dir = controller.getSessionsDirectory()
     evidence_dir = controller.getEvidenceDirectory()
+
+    style = tb.Style()
+    style.configure("Sessions.Treeview", rowheight=32, font=("Segoe UI", 10))
+    style.configure("Sessions.Treeview.Heading", font=("Segoe UI", 10, "bold"))
+
+    dashboard_header = tb.Frame(dashboard_tab)
+    dashboard_header.pack(fill=X, pady=(0, 16))
+    tb.Label(
+        dashboard_header,
+        text="Sesiones de pruebas",
+        font=("Segoe UI", 16, "bold"),
+    ).pack(side=LEFT)
+
+    def _get_current_username() -> str:
+        """Return the username of the authenticated operator."""
+
+        return controller.get_authenticated_username().strip()
+
+    def _prepare_new_session_form() -> None:
+        """Reset the inputs before creating a new session."""
+
+        try:
+            base_var.set("reporte")
+        except Exception:
+            pass
+        default_url = controller.DEFAULT_URL
+        urls = controller.load_history(controller.URL_HISTORY_CATEGORY, default_url)
+        try:
+            url_var.set(urls[0] if urls else default_url)
+        except Exception:
+            pass
+        refresh_paths()
+        status.set("🆕 Prepara una nueva sesión de evidencias.")
+
+    def _open_new_session_tab() -> None:
+        """Navigate to the evidence tab to start a new session."""
+
+        _prepare_new_session_form()
+        notebook.select(session_tab)
+
+    tb.Button(
+        dashboard_header,
+        text="Actualizar",
+        bootstyle=SECONDARY,
+        command=lambda: _refresh_sessions_table(),
+    ).pack(side=RIGHT)
+    tb.Button(
+        dashboard_header,
+        text="➕ Crear nueva sesión",
+        bootstyle=SUCCESS,
+        command=_open_new_session_tab,
+    ).pack(side=RIGHT, padx=(0, 8))
+
+    action_labels = ("Ver", "Editar", "Eliminar", "Descargar")
+    sessions_tree = ttk.Treeview(
+        dashboard_tab,
+        columns=("fecha", "nombre", "usuario", "acciones"),
+        show="headings",
+        style="Sessions.Treeview",
+        selectmode="browse",
+        height=10,
+    )
+    sessions_tree.heading("fecha", text="Fecha")
+    sessions_tree.heading("nombre", text="Nombre")
+    sessions_tree.heading("usuario", text="Usuario")
+    sessions_tree.heading("acciones", text="Acciones")
+    sessions_tree.column("fecha", width=160, anchor="center")
+    sessions_tree.column("nombre", width=220, anchor="w")
+    sessions_tree.column("usuario", width=140, anchor="center")
+    sessions_tree.column("acciones", width=260, anchor="center")
+    sessions_tree.tag_configure("odd", background="#f5f7fa")
+    sessions_tree.tag_configure("even", background="#ffffff")
+    sessions_tree.pack(side=LEFT, fill=BOTH, expand=YES)
+
+    sessions_scroll = ttk.Scrollbar(dashboard_tab, orient="vertical", command=sessions_tree.yview)
+    sessions_tree.configure(yscrollcommand=sessions_scroll.set)
+    sessions_scroll.pack(side=RIGHT, fill=Y)
+
+    sessions_registry: Dict[str, SessionDTO] = {}
+
+    def _refresh_sessions_table() -> None:
+        """Reload the table with the latest sessions from the service."""
+
+        sessions_tree.delete(*sessions_tree.get_children())
+        sessions_registry.clear()
+        sessions, error = controller.list_sessions(limit=100)
+        if error:
+            status.set(f"⚠️ {error}")
+            return
+        current_username = _get_current_username().lower()
+        for index, session_obj in enumerate(sessions, start=1):
+            row_id = str(session_obj.sessionId or index)
+            sessions_registry[row_id] = session_obj
+            edit_label = "Editar" if session_obj.username.lower() == current_username and current_username else "Editar (solo propietario)"
+            delete_label = "Eliminar" if session_obj.username.lower() == current_username and current_username else "Eliminar (solo propietario)"
+            row_labels = [action_labels[0], edit_label, delete_label, action_labels[3]]
+            sessions_tree.insert(
+                "",
+                "end",
+                iid=row_id,
+                values=(
+                    format_timestamp(session_obj.startedAt),
+                    session_obj.name,
+                    session_obj.username,
+                    "   ".join(row_labels),
+                ),
+                tags=("even" if index % 2 == 0 else "odd",),
+            )
+        if sessions:
+            status.set(f"📋 {len(sessions)} sesiones cargadas.")
+        else:
+            status.set("📋 No hay sesiones registradas todavía.")
+
+    def _view_session_details(session_obj) -> None:
+        """Display a read-only summary for the selected session."""
+
+        win = tb.Toplevel(root)
+        win.title(f"Sesión: {session_obj.name}")
+        win.transient(root)
+        win.grab_set()
+        frm = tb.Frame(win, padding=16)
+        frm.pack(fill=BOTH, expand=YES)
+        tb.Label(frm, text=session_obj.name, font=("Segoe UI", 14, "bold")).pack(anchor=W, pady=(0, 12))
+        details = (
+            ("Fecha de inicio", format_timestamp(session_obj.startedAt)),
+            ("Fecha de cierre", format_timestamp(session_obj.endedAt)),
+            ("Usuario", session_obj.username),
+            ("URL inicial", session_obj.initialUrl),
+            ("Documento", session_obj.docxUrl),
+            ("Carpeta evidencias", session_obj.evidencesUrl),
+        )
+        for label, value in details:
+            row = tb.Frame(frm)
+            row.pack(fill=X, pady=4)
+            tb.Label(row, text=f"{label}:", font=("Segoe UI", 10, "bold"), width=18, anchor=E).pack(side=LEFT)
+            tb.Label(row, text=value or "", font=("Segoe UI", 10), anchor=W, wraplength=520, justify=LEFT).pack(side=LEFT, fill=X, expand=YES, padx=(8, 0))
+        tb.Button(frm, text="Cerrar", command=win.destroy, bootstyle=SECONDARY, width=18).pack(anchor=E, pady=(16, 0))
+
+    def _prompt_edit_session(session_obj) -> None:
+        """Allow the owner to update session metadata."""
+
+        current_username = _get_current_username()
+        if not current_username or session_obj.username.lower() != current_username.lower():
+            Messagebox.showwarning("Sesión", "Solo el usuario que creó la sesión puede editarla.")
+            return
+
+        win = tb.Toplevel(root)
+        win.title("Editar sesión")
+        win.transient(root)
+        win.grab_set()
+        frm = tb.Frame(win, padding=16)
+        frm.pack(fill=BOTH, expand=YES)
+
+        tb.Label(frm, text="Editar sesión", font=("Segoe UI", 14, "bold")).pack(anchor=W, pady=(0, 12))
+
+        name_var = tb.StringVar(value=session_obj.name)
+        url_var_edit = tb.StringVar(value=session_obj.initialUrl)
+        doc_var_edit = tb.StringVar(value=session_obj.docxUrl)
+        evid_var_edit = tb.StringVar(value=session_obj.evidencesUrl)
+
+        def _build_row(label: str, variable: tk.StringVar) -> None:
+            row = tb.Frame(frm)
+            row.pack(fill=X, pady=4)
+            tb.Label(row, text=label, font=("Segoe UI", 10, "bold"), width=18, anchor=E).pack(side=LEFT)
+            tb.Entry(row, textvariable=variable).pack(side=LEFT, fill=X, expand=YES, padx=(8, 0))
+
+        _build_row("Nombre", name_var)
+        _build_row("URL inicial", url_var_edit)
+        _build_row("Documento", doc_var_edit)
+        _build_row("Carpeta evidencias", evid_var_edit)
+
+        def _accept() -> None:
+            """Persist the changes and refresh the dashboard."""
+
+            error = controller.update_session_details(
+                session_obj.sessionId or 0,
+                name_var.get().strip(),
+                url_var_edit.get().strip(),
+                doc_var_edit.get().strip(),
+                evid_var_edit.get().strip(),
+            )
+            if error:
+                Messagebox.showerror("Sesión", error)
+                return
+            status.set("✏️ Sesión actualizada correctamente.")
+            win.destroy()
+            _refresh_sessions_table()
+
+        btns = tb.Frame(frm)
+        btns.pack(fill=X, pady=(16, 0))
+        tb.Button(btns, text="Cancelar", command=win.destroy, bootstyle=SECONDARY, width=14).pack(side=RIGHT, padx=(8, 0))
+        tb.Button(btns, text="Guardar cambios", command=_accept, bootstyle=PRIMARY, width=18).pack(side=RIGHT)
+
+    def _confirm_delete_session(session_obj) -> None:
+        """Ask for confirmation before removing the session."""
+
+        current_username = _get_current_username()
+        if not current_username or session_obj.username.lower() != current_username.lower():
+            Messagebox.showwarning("Sesión", "Solo el usuario que creó la sesión puede eliminarla.")
+            return
+        if not Messagebox.askyesno("Sesión", f"¿Eliminar la sesión '{session_obj.name}'? Esta acción no se puede deshacer."):
+            return
+        error = controller.delete_session(session_obj.sessionId or 0)
+        if error:
+            Messagebox.showerror("Sesión", error)
+            return
+        status.set("🗑️ Sesión eliminada.")
+        _refresh_sessions_table()
+
+    def _handle_download(session_obj) -> None:
+        """Placeholder action for the future download workflow."""
+
+        Messagebox.showinfo(
+            "Descarga",
+            "La descarga de sesiones estará disponible próximamente.",
+        )
+
+    def _on_sessions_tree_click(event) -> None:
+        """Dispatch click events to the corresponding action handler."""
+
+        region = sessions_tree.identify("region", event.x, event.y)
+        if region != "cell":
+            return
+        column = sessions_tree.identify_column(event.x)
+        if column != "#4":
+            return
+        row_id = sessions_tree.identify_row(event.y)
+        if not row_id:
+            return
+        bbox = sessions_tree.bbox(row_id, column)
+        if not bbox:
+            return
+        rel_x = event.x - bbox[0]
+        segment_width = bbox[2] / max(1, len(action_labels))
+        action_index = int(rel_x // segment_width) if segment_width else 0
+        action_index = max(0, min(action_index, len(action_labels) - 1))
+        session_obj = sessions_registry.get(row_id)
+        if not session_obj:
+            return
+        action = action_labels[action_index]
+        if action == "Ver":
+            _view_session_details(session_obj)
+        elif action == "Editar":
+            _prompt_edit_session(session_obj)
+        elif action == "Eliminar":
+            _confirm_delete_session(session_obj)
+        else:
+            _handle_download(session_obj)
+
+    sessions_tree.bind("<Button-1>", _on_sessions_tree_click, add="+")
+    sessions_tree.bind("<Double-1>", lambda event: _on_sessions_tree_click(event))
+
+    _refresh_sessions_table()
     
     def refresh_paths(*_):
         """Auto-generated docstring for `refresh_paths`."""
@@ -103,7 +408,6 @@ def build_pruebas_view(
     
     base_var.trace_add("write", _on_base_change)
     
-    status = tb.StringVar(value="Listo.")
     status_bar = tb.Label(root, textvariable=status, bootstyle=INFO, anchor=W, padding=(16,6)); status_bar.pack(fill=X)
     
     session_saved = {"val": False}
@@ -690,4 +994,19 @@ def build_pruebas_view(
     btn_limpiar.pack(side=RIGHT, padx=(8,0))
     tb.Button(controls_bar, text="✅ DONE", command=generar_doc, bootstyle=WARNING, width=12).pack(side=RIGHT)
 
-    return PruebasViewContext(controls_bar)
+    context = PruebasViewContext(
+        buttons=controls_bar,
+        notebook=notebook,
+        dashboardTab=dashboard_tab,
+        sessionTab=session_tab,
+    )
+
+    def _sync_controls(_event: Optional[object] = None) -> None:
+        """Update the visibility of the control bar when the tab changes."""
+
+        context.refresh_controls_visibility()
+
+    notebook.bind("<<NotebookTabChanged>>", _sync_controls, add="+")
+    context.refresh_controls_visibility()
+
+    return context

@@ -90,6 +90,93 @@ class SessionService:
             return None
         return self._active_state.session
 
+    def list_sessions(self, username: Optional[str] = None, limit: int = 100) -> List[SessionDTO]:
+        """Return the most recent sessions for the dashboard."""
+
+        try:
+            return self._session_dao.list_sessions(limit=limit, username=username)
+        except SessionDAOError as exc:
+            logger.error("No fue posible consultar las sesiones: %s", exc)
+            raise SessionServiceError(str(exc)) from exc
+
+    def update_session_details(
+        self,
+        session_id: int,
+        name: str,
+        initial_url: str,
+        docx_url: str,
+        evidences_url: str,
+        requesting_username: str,
+    ) -> SessionDTO:
+        """Update metadata ensuring the requester owns the session."""
+
+        if not requesting_username:
+            raise SessionServiceError("Debes iniciar sesión para editar una sesión.")
+
+        try:
+            session = self._session_dao.get_session(session_id)
+        except SessionDAOError as exc:
+            logger.error("No fue posible consultar la sesión %s: %s", session_id, exc)
+            raise SessionServiceError(str(exc)) from exc
+
+        if session is None:
+            raise SessionServiceError("La sesión solicitada no existe.")
+
+        if session.username.lower() != requesting_username.lower():
+            raise SessionServiceError("Solo el usuario que creó la sesión puede editarla.")
+
+        updated_at = self._utcnow()
+        new_name = name or session.name
+        new_initial = initial_url or session.initialUrl
+        new_doc = docx_url or session.docxUrl
+        new_evid = evidences_url or session.evidencesUrl
+
+        try:
+            self._session_dao.update_session_details(
+                session_id,
+                new_name,
+                new_initial,
+                new_doc,
+                new_evid,
+                updated_at,
+            )
+            refreshed = self._session_dao.get_session(session_id)
+        except SessionDAOError as exc:
+            logger.error("No fue posible actualizar la sesión %s: %s", session_id, exc)
+            raise SessionServiceError(str(exc)) from exc
+
+        if refreshed and self._active_state and self._active_state.session.sessionId == session_id:
+            self._active_state.session = refreshed
+
+        return refreshed or session
+
+    def delete_session(self, session_id: int, requesting_username: str) -> None:
+        """Delete a session verifying the requester owns it."""
+
+        if not requesting_username:
+            raise SessionServiceError("Debes iniciar sesión para eliminar una sesión.")
+
+        try:
+            session = self._session_dao.get_session(session_id)
+        except SessionDAOError as exc:
+            logger.error("No fue posible consultar la sesión %s: %s", session_id, exc)
+            raise SessionServiceError(str(exc)) from exc
+
+        if session is None:
+            raise SessionServiceError("La sesión solicitada no existe.")
+
+        if session.username.lower() != requesting_username.lower():
+            raise SessionServiceError("Solo el usuario que creó la sesión puede eliminarla.")
+
+        try:
+            self._session_dao.delete_session(session_id)
+        except SessionDAOError as exc:
+            logger.error("No fue posible eliminar la sesión %s: %s", session_id, exc)
+            raise SessionServiceError(str(exc)) from exc
+
+        if self._active_state and self._active_state.session.sessionId == session_id:
+            self._active_state = None
+
     def update_outputs(self, docx_url: str, evidences_url: str) -> None:
         """Persist the latest output locations if a session is active."""
 

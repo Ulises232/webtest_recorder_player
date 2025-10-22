@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0] - 2024-05-31
+### Added
+- Tablero inicial en la sección de pruebas con tabla moderna, acciones rápidas y botón para crear sesiones nuevas.
+- Acciones para ver, editar, eliminar y preparar la descarga de sesiones directamente desde la interfaz.
+- Métodos en `SessionDAO`, `SessionService` y `MainController` para listar, actualizar y eliminar sesiones existentes.
+
+### Changed
+- La vista de pruebas ahora organiza el flujo en pestañas y solo muestra los controles inferiores cuando corresponde.
+
+### Fixed
+- Se impide editar o eliminar sesiones creadas por otros usuarios mostrando avisos claros en la tabla.
+
 ## [0.6.1] - 2024-05-30
 ### Added
 - Vistas independientes para generación automática, generación manual y pruebas con sus componentes encapsulados dentro de `app/views`.

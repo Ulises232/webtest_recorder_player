@@ -82,6 +82,13 @@ class MainController:
         """Return the cached authenticated user, if any."""
         return self._authenticated_user
 
+    def get_authenticated_username(self) -> str:
+        """Return the username for the authenticated user or an empty string."""
+
+        if not self._authenticated_user or not self._authenticated_user.username:
+            return ""
+        return self._authenticated_user.username
+
     def getSessionsDirectory(self) -> Path:
         """Provide the storage folder for generated session documents."""
 
@@ -179,6 +186,49 @@ class MainController:
         except SessionServiceError as exc:
             return [], str(exc)
         return evidences, None
+
+    def list_sessions(self, limit: int = 100) -> Tuple[List[SessionDTO], Optional[str]]:
+        """Return the available sessions for the dashboard."""
+
+        try:
+            sessions = self._session_service.list_sessions(limit=limit)
+        except SessionServiceError as exc:
+            return [], str(exc)
+        return sessions, None
+
+    def update_session_details(
+        self,
+        session_id: int,
+        name: str,
+        initial_url: str,
+        docx_url: str,
+        evidences_url: str,
+    ) -> Optional[str]:
+        """Persist metadata changes requested from the dashboard."""
+
+        username = self.get_authenticated_username()
+        try:
+            self._session_service.update_session_details(
+                session_id,
+                name,
+                initial_url,
+                docx_url,
+                evidences_url,
+                username,
+            )
+        except SessionServiceError as exc:
+            return str(exc)
+        return None
+
+    def delete_session(self, session_id: int) -> Optional[str]:
+        """Remove a session when requested from the dashboard."""
+
+        username = self.get_authenticated_username()
+        try:
+            self._session_service.delete_session(session_id, username)
+        except SessionServiceError as exc:
+            return str(exc)
+        return None
 
     def update_session_evidence(
         self,
