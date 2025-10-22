@@ -7,6 +7,7 @@
 ### Changed
 - `main_view.py` delega la construcción de cada sección del menú a módulos especializados para reducir su tamaño y facilitar el mantenimiento.
 - Nuevas directrices en `AGENTS.md` que obligan a crear un módulo por cada vista expuesta en la ventana principal.
+- El cuadro de inicio de sesión ahora reside en `app/views/login_view.py` y la ventana principal solo lo invoca como módulo independiente.
 
 ### Fixed
 - Se corrigió un `NameError` en la vista de pruebas que impedía inicializar los controles inferiores al abrir la aplicación.
