@@ -26,7 +26,7 @@ class ActiveSessionState:
     """Track runtime information for the session timer."""
 
     session: SessionDTO
-    resumeReference: datetime
+    resumeReference: Optional[datetime]
     elapsedSeconds: int
     lastEvidenceAt: Optional[datetime]
     activePause: Optional[SessionPauseDTO]
@@ -89,6 +89,93 @@ class SessionService:
         if not self._active_state:
             return None
         return self._active_state.session
+
+    def list_sessions(self, username: Optional[str] = None, limit: int = 100) -> List[SessionDTO]:
+        """Return the most recent sessions for the dashboard."""
+
+        try:
+            return self._session_dao.list_sessions(limit=limit, username=username)
+        except SessionDAOError as exc:
+            logger.error("No fue posible consultar las sesiones: %s", exc)
+            raise SessionServiceError(str(exc)) from exc
+
+    def update_session_details(
+        self,
+        session_id: int,
+        name: str,
+        initial_url: str,
+        docx_url: str,
+        evidences_url: str,
+        requesting_username: str,
+    ) -> SessionDTO:
+        """Update metadata ensuring the requester owns the session."""
+
+        if not requesting_username:
+            raise SessionServiceError("Debes iniciar sesión para editar una sesión.")
+
+        try:
+            session = self._session_dao.get_session(session_id)
+        except SessionDAOError as exc:
+            logger.error("No fue posible consultar la sesión %s: %s", session_id, exc)
+            raise SessionServiceError(str(exc)) from exc
+
+        if session is None:
+            raise SessionServiceError("La sesión solicitada no existe.")
+
+        if session.username.lower() != requesting_username.lower():
+            raise SessionServiceError("Solo el usuario que creó la sesión puede editarla.")
+
+        updated_at = self._utcnow()
+        new_name = name or session.name
+        new_initial = initial_url or session.initialUrl
+        new_doc = docx_url or session.docxUrl
+        new_evid = evidences_url or session.evidencesUrl
+
+        try:
+            self._session_dao.update_session_details(
+                session_id,
+                new_name,
+                new_initial,
+                new_doc,
+                new_evid,
+                updated_at,
+            )
+            refreshed = self._session_dao.get_session(session_id)
+        except SessionDAOError as exc:
+            logger.error("No fue posible actualizar la sesión %s: %s", session_id, exc)
+            raise SessionServiceError(str(exc)) from exc
+
+        if refreshed and self._active_state and self._active_state.session.sessionId == session_id:
+            self._active_state.session = refreshed
+
+        return refreshed or session
+
+    def delete_session(self, session_id: int, requesting_username: str) -> None:
+        """Delete a session verifying the requester owns it."""
+
+        if not requesting_username:
+            raise SessionServiceError("Debes iniciar sesión para eliminar una sesión.")
+
+        try:
+            session = self._session_dao.get_session(session_id)
+        except SessionDAOError as exc:
+            logger.error("No fue posible consultar la sesión %s: %s", session_id, exc)
+            raise SessionServiceError(str(exc)) from exc
+
+        if session is None:
+            raise SessionServiceError("La sesión solicitada no existe.")
+
+        if session.username.lower() != requesting_username.lower():
+            raise SessionServiceError("Solo el usuario que creó la sesión puede eliminarla.")
+
+        try:
+            self._session_dao.delete_session(session_id)
+        except SessionDAOError as exc:
+            logger.error("No fue posible eliminar la sesión %s: %s", session_id, exc)
+            raise SessionServiceError(str(exc)) from exc
+
+        if self._active_state and self._active_state.session.sessionId == session_id:
+            self._active_state = None
 
     def update_outputs(self, docx_url: str, evidences_url: str) -> None:
         """Persist the latest output locations if a session is active."""
@@ -233,6 +320,73 @@ class SessionService:
             state.lastEvidenceAt = evidences[-1].createdAt
         return evidences
 
+    def get_session_with_evidences(
+        self,
+        session_id: int,
+        requesting_username: str,
+    ) -> tuple[SessionDTO, List[SessionEvidenceDTO]]:
+        """Return a session and its evidences enforcing ownership."""
+
+        if not requesting_username:
+            raise SessionServiceError("Debes iniciar sesión para editar una sesión.")
+
+        try:
+            session = self._session_dao.get_session(session_id)
+        except SessionDAOError as exc:
+            logger.error("No fue posible consultar la sesión %s: %s", session_id, exc)
+            raise SessionServiceError(str(exc)) from exc
+
+        if session is None:
+            raise SessionServiceError("La sesión solicitada no existe.")
+
+        if session.username.lower() != requesting_username.lower():
+            raise SessionServiceError("Solo el usuario que creó la sesión puede editarla.")
+
+        try:
+            evidences = self._evidence_dao.list_by_session(session_id)
+        except SessionEvidenceDAOError as exc:
+            logger.error("No fue posible consultar las evidencias de la sesión %s: %s", session_id, exc)
+            raise SessionServiceError(str(exc)) from exc
+
+        return session, evidences
+
+    def activate_session_for_dashboard_edit(
+        self,
+        session_id: int,
+        requesting_username: str,
+    ) -> tuple[SessionDTO, List[SessionEvidenceDTO]]:
+        """Set an existing session as active so the GUI can edit it."""
+
+        session, evidences = self.get_session_with_evidences(session_id, requesting_username)
+        if self._active_state and self._active_state.session.sessionId != session_id:
+            raise SessionServiceError("Finaliza la sesión activa antes de editar otra desde el tablero.")
+
+        last_evidence_at = evidences[-1].createdAt if evidences else None
+        elapsed_seconds = session.durationSeconds or 0
+
+        if self._active_state and self._active_state.session.sessionId == session_id:
+            state = self._active_state
+            state.session = session
+            state.elapsedSeconds = elapsed_seconds
+            state.lastEvidenceAt = last_evidence_at
+            state.resumeReference = None
+            state.activePause = None
+        else:
+            self._active_state = ActiveSessionState(
+                session=session,
+                resumeReference=None,
+                elapsedSeconds=elapsed_seconds,
+                lastEvidenceAt=last_evidence_at,
+                activePause=None,
+            )
+
+        return session, evidences
+
+    def clear_active_session(self) -> None:
+        """Release the active session reference without persisting changes."""
+
+        self._active_state = None
+
     def update_evidence(
         self,
         evidence_id: int,
@@ -288,3 +442,58 @@ class SessionService:
         finally:
             self._active_state = None
         return refreshed or state.session
+
+    def update_session_evidence_details(
+        self,
+        session_id: int,
+        evidence_id: int,
+        file_path: Path,
+        description: str,
+        considerations: str,
+        observations: str,
+        requesting_username: str,
+    ) -> None:
+        """Allow dashboard edits for evidence metadata enforcing ownership."""
+
+        if not requesting_username:
+            raise SessionServiceError("Debes iniciar sesión para editar evidencias.")
+
+        try:
+            session = self._session_dao.get_session(session_id)
+        except SessionDAOError as exc:
+            logger.error("No fue posible consultar la sesión %s: %s", session_id, exc)
+            raise SessionServiceError(str(exc)) from exc
+
+        if session is None:
+            raise SessionServiceError("La sesión solicitada no existe.")
+
+        if session.username.lower() != requesting_username.lower():
+            raise SessionServiceError("Solo el usuario que creó la sesión puede editar sus evidencias.")
+
+        updated_at = self._utcnow()
+        try:
+            self._evidence_dao.update_evidence(
+                evidence_id,
+                file_path.name,
+                str(file_path),
+                description,
+                considerations,
+                observations,
+                updated_at,
+            )
+        except SessionEvidenceDAOError as exc:
+            logger.error("No fue posible actualizar la evidencia %s: %s", evidence_id, exc)
+            raise SessionServiceError(str(exc)) from exc
+
+        if self._active_state and self._active_state.session.sessionId == session_id:
+            try:
+                evidences = self._evidence_dao.list_by_session(session_id)
+            except SessionEvidenceDAOError as exc:
+                logger.warning(
+                    "No se pudieron refrescar las evidencias de la sesión activa %s tras una edición: %s",
+                    session_id,
+                    exc,
+                )
+                return
+            if evidences:
+                self._active_state.lastEvidenceAt = evidences[-1].createdAt

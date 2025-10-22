@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Dict, List, Optional
 import os
 import time
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk
 
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *  # noqa: F401,F403
+
+from app.dtos.session_dto import SessionDTO, SessionEvidenceDTO
 
 
 @dataclass
@@ -19,10 +21,23 @@ class PruebasViewContext:
     """Expose helper controls from the tests view."""
 
     buttons: tb.Frame
+    notebook: tb.Notebook
+    dashboardTab: tk.Widget
+    sessionTab: tk.Widget
+
+    def _is_session_tab_active(self) -> bool:
+        """Return whether the evidence workflow tab is active."""
+
+        try:
+            return self.notebook.index(self.notebook.select()) == self.notebook.index(self.sessionTab)
+        except Exception:
+            return False
 
     def show_controls(self) -> None:
         """Display the bottom buttons for the tests workflow."""
 
+        if not self._is_session_tab_active():
+            return
         try:
             self.buttons.pack(fill=tk.X)
         except Exception:
@@ -35,6 +50,32 @@ class PruebasViewContext:
             self.buttons.pack_forget()
         except Exception:
             pass
+
+    def refresh_controls_visibility(self) -> None:
+        """Synchronize the visibility of the bottom buttons with the active tab."""
+
+        if self._is_session_tab_active():
+            self.show_controls()
+        else:
+            self.hide_controls()
+
+    def select_dashboard(self) -> None:
+        """Activate the dashboard tab listing existing sessions."""
+
+        try:
+            self.notebook.select(self.dashboardTab)
+        except Exception:
+            pass
+        self.refresh_controls_visibility()
+
+    def select_session_tab(self) -> None:
+        """Activate the evidence workflow tab."""
+
+        try:
+            self.notebook.select(self.sessionTab)
+        except Exception:
+            pass
+        self.refresh_controls_visibility()
 
 
 def build_pruebas_view(
@@ -53,7 +94,48 @@ def build_pruebas_view(
     """Render the tests workflow inside the given frame."""
 
     Messagebox = messagebox_service
-    
+    status = tb.StringVar(value="Listo.")
+
+    dashboard_edit_state: Dict[str, Optional[int]] = {"sessionId": None}
+
+    def _is_dashboard_editing() -> bool:
+        """Return whether a session loaded from the dashboard is being edited."""
+
+        return bool(dashboard_edit_state.get("sessionId"))
+
+    def _save_loaded_session_changes() -> None:
+        """Persist metadata updates for the session opened from the dashboard."""
+
+        session_id = dashboard_edit_state.get("sessionId")
+        if not session_id:
+            Messagebox.showinfo("Sesión", "Selecciona una sesión del tablero antes de guardar.")
+            return
+        error_msg = controller.update_session_details(
+            session_id,
+            base_var.get().strip(),
+            url_var.get().strip(),
+            doc_var.get().strip(),
+            ev_var.get().strip(),
+        )
+        if error_msg:
+            Messagebox.showerror("Sesión", error_msg)
+            return
+        prev_base["val"] = controller.slugify_for_windows(base_var.get() or "reporte")
+        session["title"] = (base_var.get() or session.get("title", "")).strip() or session.get("title", "")
+        session_saved["val"] = True
+        status.set("💾 Sesión actualizada desde el editor.")
+        _refresh_sessions_table()
+
+    notebook = tb.Notebook(parent, bootstyle="secondary")
+    notebook.pack(fill=BOTH, expand=YES)
+
+    dashboard_tab = tb.Frame(notebook, padding=16)
+    session_tab = tb.Frame(notebook)
+    notebook.add(dashboard_tab, text="Sesiones")
+    notebook.add(session_tab, text="Evidencias")
+
+    parent = session_tab
+
     card1 = tb.Labelframe(parent, text="Datos generales", bootstyle=SECONDARY, padding=12)
     card1.pack(fill=X, pady=(0,12)); card1.columnconfigure(1, weight=1)
     
@@ -64,6 +146,15 @@ def build_pruebas_view(
     urls = controller.load_history(controller.URL_HISTORY_CATEGORY, controller.DEFAULT_URL)
     url_var = tb.StringVar(value=urls[0] if urls else controller.DEFAULT_URL)
     tb.Combobox(card1, textvariable=url_var, values=urls, width=56, bootstyle="light").grid(row=2, column=1, sticky=EW, pady=(10,2))
+
+    btn_save_session = tb.Button(
+        card1,
+        text="Actualizar sesión",
+        bootstyle=SUCCESS,
+        command=_save_loaded_session_changes,
+        state="disabled",
+    )
+    btn_save_session.grid(row=4, column=1, sticky=E, pady=(12, 0))
     
     card2 = tb.Labelframe(parent, text="Salidas", bootstyle=SECONDARY, padding=12)
     card2.pack(fill=X, pady=(0,12)); card2.columnconfigure(1, weight=1)
@@ -76,34 +167,467 @@ def build_pruebas_view(
     
     sessions_dir = controller.getSessionsDirectory()
     evidence_dir = controller.getEvidenceDirectory()
-    
-    def refresh_paths(*_):
-        """Auto-generated docstring for `refresh_paths`."""
+
+    style = tb.Style()
+    style.configure(
+        "CartoonAccent.TButton",
+        font=("Segoe UI", 11, "bold"),
+        foreground="#ffffff",
+        background="#6C63FF",
+        padding=(18, 10),
+        borderwidth=0,
+    )
+    style.map(
+        "CartoonAccent.TButton",
+        background=[
+            ("active", "#867DFF"),
+            ("pressed", "#5548d9"),
+            ("disabled", "#B8B3FF"),
+        ],
+        foreground=[("disabled", "#E9E7FF")],
+    )
+    style.configure(
+        "CartoonAccentSlim.TButton",
+        font=("Segoe UI", 10, "bold"),
+        foreground="#ffffff",
+        background="#6C63FF",
+        padding=(12, 6),
+        borderwidth=0,
+    )
+    style.map(
+        "CartoonAccentSlim.TButton",
+        background=[
+            ("active", "#867DFF"),
+            ("pressed", "#5548d9"),
+            ("disabled", "#B8B3FF"),
+        ],
+        foreground=[("disabled", "#E9E7FF")],
+    )
+    style.configure(
+        "CartoonGhost.TButton",
+        font=("Segoe UI", 11, "bold"),
+        foreground="#414561",
+        background="#FFFFFF",
+        bordercolor="#FFC542",
+        focusthickness=3,
+        focuscolor="#FFC542",
+        padding=(18, 10),
+    )
+    style.map(
+        "CartoonGhost.TButton",
+        background=[("active", "#FFF4CC"), ("pressed", "#FFE08A")],
+        foreground=[("active", "#2b2f4c"), ("pressed", "#1f2238")],
+    )
+
+    header_bg = "#E8ECFF"
+    row_even_bg = "#ffffff"
+    row_odd_bg = "#f5f7fa"
+
+    dashboard_header = tb.Frame(dashboard_tab)
+    dashboard_header.pack(fill=X, pady=(0, 16))
+    tb.Label(
+        dashboard_header,
+        text="Sesiones de pruebas",
+        font=("Segoe UI", 16, "bold"),
+    ).pack(side=LEFT)
+
+    def _get_current_username() -> str:
+        """Return the username of the authenticated operator."""
+
+        return controller.get_authenticated_username().strip()
+
+    def _prepare_new_session_form() -> None:
+        """Reset the inputs before creating a new session."""
+
+        try:
+            base_var.set("reporte")
+        except Exception:
+            pass
+        default_url = controller.DEFAULT_URL
+        urls = controller.load_history(controller.URL_HISTORY_CATEGORY, default_url)
+        try:
+            url_var.set(urls[0] if urls else default_url)
+        except Exception:
+            pass
+        refresh_paths()
+        status.set("🆕 Prepara una nueva sesión de evidencias.")
+
+    def _open_new_session_tab() -> None:
+        """Navigate to the evidence tab to start a new session."""
+
+        _prepare_new_session_form()
+        notebook.select(session_tab)
+
+    tb.Button(
+        dashboard_header,
+        text="🔄 Actualizar",
+        style="CartoonGhost.TButton",
+        command=lambda: _refresh_sessions_table(),
+        compound=LEFT,
+    ).pack(side=RIGHT)
+    tb.Button(
+        dashboard_header,
+        text="✨ Crear sesión",
+        style="CartoonAccent.TButton",
+        command=_open_new_session_tab,
+        compound=LEFT,
+    ).pack(side=RIGHT, padx=(0, 8))
+
+    table_container = tb.Frame(dashboard_tab)
+    table_container.pack(fill=BOTH, expand=YES)
+
+    header_frame = tk.Frame(table_container, bg=header_bg)
+    header_frame.pack(fill=X, padx=(0, 12))
+    header_frame.grid_columnconfigure(0, minsize=160)
+    header_frame.grid_columnconfigure(1, weight=1, minsize=240)
+    header_frame.grid_columnconfigure(2, minsize=160)
+    header_frame.grid_columnconfigure(3, minsize=340)
+
+    header_specs = (
+        ("Fecha", "center"),
+        ("Nombre", "w"),
+        ("Usuario", "center"),
+        ("Acciones", "e"),
+    )
+    for column_index, (title, anchor) in enumerate(header_specs):
+        header_label = tk.Label(
+            header_frame,
+            text=title,
+            bg=header_bg,
+            fg="#1f2240",
+            font=("Segoe UI", 10, "bold"),
+            anchor=anchor,
+        )
+        header_label.grid(row=0, column=column_index, sticky="ew", padx=(16 if column_index == 0 else 8, 8), pady=12)
+
+    sessions_canvas = tk.Canvas(
+        table_container,
+        highlightthickness=0,
+        background=row_even_bg,
+        borderwidth=0,
+    )
+    sessions_canvas.pack(side=LEFT, fill=BOTH, expand=YES, padx=(0, 12))
+
+    sessions_scroll = ttk.Scrollbar(table_container, orient="vertical", command=sessions_canvas.yview)
+    sessions_scroll.pack(side=RIGHT, fill=Y)
+    sessions_canvas.configure(yscrollcommand=sessions_scroll.set)
+
+    sessions_rows_holder = tk.Frame(sessions_canvas, bg=row_even_bg)
+    sessions_rows_holder.grid_columnconfigure(0, weight=1)
+    sessions_window = sessions_canvas.create_window((0, 0), window=sessions_rows_holder, anchor="nw")
+
+    def _on_sessions_canvas_configure(event) -> None:
+        """Resize the table canvas content when the widget changes."""
+
+        try:
+            sessions_canvas.itemconfigure(sessions_window, width=event.width)
+        except Exception:
+            pass
+
+    def _update_sessions_scrollregion(_event) -> None:
+        """Sync the scrollable region with the content size."""
+
+        try:
+            sessions_canvas.configure(scrollregion=sessions_canvas.bbox("all"))
+        except Exception:
+            pass
+
+    sessions_canvas.bind("<Configure>", _on_sessions_canvas_configure, add="+")
+    sessions_rows_holder.bind("<Configure>", _update_sessions_scrollregion, add="+")
+    bind_mousewheel(sessions_canvas, sessions_canvas.yview)
+
+    def _refresh_sessions_table() -> None:
+        """Reload the table with the latest sessions from the service."""
+
+        for child in sessions_rows_holder.winfo_children():
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        sessions, error = controller.list_sessions(limit=100)
+        if error:
+            status.set(f"⚠️ {error}")
+            return
+        current_username = _get_current_username().lower()
+        for index, session_obj in enumerate(sessions, start=1):
+            is_owner = session_obj.username.lower() == current_username and bool(current_username)
+            row_bg = row_even_bg if index % 2 == 0 else row_odd_bg
+            row_frame = tk.Frame(sessions_rows_holder, bg=row_bg)
+            row_frame.grid(row=index - 1, column=0, sticky="ew", pady=(0, 8), padx=(0, 12))
+            row_frame.grid_columnconfigure(0, minsize=160)
+            row_frame.grid_columnconfigure(1, weight=1, minsize=240)
+            row_frame.grid_columnconfigure(2, minsize=160)
+            row_frame.grid_columnconfigure(3, minsize=340)
+
+            tk.Label(
+                row_frame,
+                text=format_timestamp(session_obj.startedAt),
+                bg=row_bg,
+                fg="#1f2230",
+                font=("Segoe UI", 10),
+                anchor="center",
+            ).grid(row=0, column=0, sticky="ew", padx=(16, 8), pady=12)
+
+            tk.Label(
+                row_frame,
+                text=session_obj.name,
+                bg=row_bg,
+                fg="#1f2230",
+                font=("Segoe UI", 10),
+                anchor="w",
+            ).grid(row=0, column=1, sticky="ew", padx=8, pady=12)
+
+            tk.Label(
+                row_frame,
+                text=session_obj.username,
+                bg=row_bg,
+                fg="#1f2230",
+                font=("Segoe UI", 10),
+                anchor="center",
+            ).grid(row=0, column=2, sticky="ew", padx=8, pady=12)
+
+            actions_frame = tk.Frame(row_frame, bg=row_bg)
+            actions_frame.grid(row=0, column=3, sticky="e", padx=(8, 16))
+
+            def _make_action_button(label: str, handler: Callable[[], None], enabled: bool = True) -> tb.Button:
+                """Create a blue-styled action button for the dashboard table."""
+
+                btn = tb.Button(
+                    actions_frame,
+                    text=label,
+                    style="CartoonAccentSlim.TButton",
+                    command=handler,
+                    width=9,
+                )
+                if not enabled:
+                    btn.configure(state="disabled")
+                btn.pack(side=LEFT, padx=4)
+                return btn
+
+            _make_action_button(
+                "Ver",
+                handler=lambda obj=session_obj: _view_session_details(obj),
+            )
+
+            _make_action_button(
+                "Editar",
+                handler=lambda obj=session_obj: _open_session_editor(obj),
+                enabled=is_owner,
+            )
+
+            _make_action_button(
+                "Eliminar",
+                handler=lambda obj=session_obj: _confirm_delete_session(obj),
+                enabled=is_owner,
+            )
+
+            _make_action_button(
+                "Descargar",
+                handler=lambda obj=session_obj: _handle_download(obj),
+            )
+
+            if not is_owner:
+                note_label = tk.Label(
+                    actions_frame,
+                    text="Solo propietario",
+                    bg=row_bg,
+                    fg="#6C63FF",
+                    font=("Segoe UI", 8, "italic"),
+                    anchor="e",
+                )
+                note_label.pack(anchor="e", pady=(6, 0))
+        if sessions:
+            status.set(f"📋 {len(sessions)} sesiones cargadas.")
+        else:
+            status.set("📋 No hay sesiones registradas todavía.")
+
+    def _view_session_details(session_obj) -> None:
+        """Display a read-only summary for the selected session."""
+
+        win = tb.Toplevel(root)
+        win.title(f"Sesión: {session_obj.name}")
+        win.transient(root)
+        win.grab_set()
+        frm = tb.Frame(win, padding=16)
+        frm.pack(fill=BOTH, expand=YES)
+        tb.Label(frm, text=session_obj.name, font=("Segoe UI", 14, "bold")).pack(anchor=W, pady=(0, 12))
+        details = (
+            ("Fecha de inicio", format_timestamp(session_obj.startedAt)),
+            ("Fecha de cierre", format_timestamp(session_obj.endedAt)),
+            ("Usuario", session_obj.username),
+            ("URL inicial", session_obj.initialUrl),
+            ("Documento", session_obj.docxUrl),
+            ("Carpeta evidencias", session_obj.evidencesUrl),
+        )
+        for label, value in details:
+            row = tb.Frame(frm)
+            row.pack(fill=X, pady=4)
+            tb.Label(row, text=f"{label}:", font=("Segoe UI", 10, "bold"), width=18, anchor=E).pack(side=LEFT)
+            tb.Label(row, text=value or "", font=("Segoe UI", 10), anchor=W, wraplength=520, justify=LEFT).pack(side=LEFT, fill=X, expand=YES, padx=(8, 0))
+        tb.Button(frm, text="Cerrar", command=win.destroy, bootstyle=SECONDARY, width=18).pack(anchor=E, pady=(16, 0))
+
+    def _map_evidence_to_step(evidence: SessionEvidenceDTO) -> Dict[str, object]:
+        """Translate a persisted evidence to the in-memory representation."""
+
+        shots: List[str] = []
+        if evidence.filePath:
+            shots.append(evidence.filePath)
+        return {
+            "id": evidence.evidenceId,
+            "cmd": evidence.fileName or "Evidencia",
+            "shots": shots,
+            "desc": evidence.description or "",
+            "consideraciones": evidence.considerations or "",
+            "observacion": evidence.observations or "",
+            "createdAt": evidence.createdAt,
+            "elapsedSinceStart": evidence.elapsedSinceSessionStartSeconds,
+            "elapsedSincePrevious": evidence.elapsedSincePreviousEvidenceSeconds,
+        }
+
+    def _populate_session_from_evidences(evidences: List[SessionEvidenceDTO]) -> None:
+        """Replace the in-memory steps with evidences pulled from storage."""
+
+        session["steps"].clear()
+        for evidence in evidences:
+            session["steps"].append(_map_evidence_to_step(evidence))
+        _refresh_evidence_tree()
+
+    def _clear_dashboard_edit_mode() -> None:
+        """Disable dashboard-specific editing controls and reset labels."""
+
+        if not dashboard_edit_state.get("sessionId"):
+            return
+        dashboard_edit_state["sessionId"] = None
+        try:
+            controller.clear_active_session()
+        except Exception:
+            pass
+        try:
+            btn_save_session.configure(state="disabled")
+        except Exception:
+            pass
+        try:
+            btn_session_start.configure(text="Iniciar sesión")
+        except Exception:
+            pass
+
+    def _open_session_editor(session_obj: SessionDTO) -> None:
+        """Load the session into the evidence tab for inline editing."""
+
+        current_username = _get_current_username()
+        if not current_username or session_obj.username.lower() != current_username.lower():
+            Messagebox.showwarning("Sesión", "Solo el usuario que creó la sesión puede editarla.")
+            return
+
+        if _is_dashboard_editing():
+            _clear_dashboard_edit_mode()
+
+        session_payload, evidences, error = controller.activate_session_for_dashboard_edit(session_obj.sessionId or 0)
+        if error:
+            Messagebox.showerror("Sesión", error)
+            return
+
+        loaded_session = session_payload or session_obj
+        dashboard_edit_state["sessionId"] = loaded_session.sessionId
+
+        auto_paths_state["enabled"] = False
+        try:
+            base_var.set(loaded_session.name or "")
+            url_var.set(loaded_session.initialUrl or "")
+            doc_var.set(loaded_session.docxUrl or "")
+            ev_var.set(loaded_session.evidencesUrl or "")
+        finally:
+            auto_paths_state["enabled"] = True
+
+        prev_base["val"] = controller.slugify_for_windows(base_var.get() or "reporte")
+        session["title"] = loaded_session.name or ""
+        session["sessionId"] = loaded_session.sessionId
+        _populate_session_from_evidences(evidences)
+        session_saved["val"] = True
+
+        _cancel_timer()
+        session_state.update({"active": True, "paused": True, "timerJob": None})
+        timer_var.set(format_elapsed(loaded_session.durationSeconds or 0))
+
+        try:
+            btn_session_start.configure(state="disabled", text="Sesión cargada")
+            btn_session_pause.configure(state="disabled", text="Pausar sesión")
+            btn_session_finish.configure(state="disabled")
+            btn_save_session.configure(state="normal")
+        except Exception:
+            pass
+
+        status.set(f"✏️ Editando la sesión '{loaded_session.name}'.")
+        notebook.select(session_tab)
+        notebook.focus_set()
+
+    def _confirm_delete_session(session_obj) -> None:
+        """Ask for confirmation before removing the session."""
+
+        current_username = _get_current_username()
+        if not current_username or session_obj.username.lower() != current_username.lower():
+            Messagebox.showwarning("Sesión", "Solo el usuario que creó la sesión puede eliminarla.")
+            return
+        if not Messagebox.askyesno("Sesión", f"¿Eliminar la sesión '{session_obj.name}'? Esta acción no se puede deshacer."):
+            return
+        error = controller.delete_session(session_obj.sessionId or 0)
+        if error:
+            Messagebox.showerror("Sesión", error)
+            return
+        status.set("🗑️ Sesión eliminada.")
+        _refresh_sessions_table()
+
+    def _handle_download(session_obj) -> None:
+        """Placeholder action for the future download workflow."""
+
+        Messagebox.showinfo(
+            "Descarga",
+            "La descarga de sesiones estará disponible próximamente.",
+        )
+
+    _refresh_sessions_table()
+
+    auto_paths_state = {"enabled": True}
+
+    def refresh_paths(*_args: object) -> None:
+        """Compute default output locations when the base name changes."""
+
+        if not auto_paths_state.get("enabled", True):
+            return
         base = controller.slugify_for_windows(base_var.get() or "reporte")
         final = f"{base}"
         doc_var.set(str(sessions_dir / f"{final}.docx"))
         ev_var.set(str(evidence_dir / final))
-    base_var.trace_add("write", refresh_paths); refresh_paths()
-    
+
+    base_var.trace_add("write", refresh_paths)
+    refresh_paths()
+
     prev_base = {"val": controller.slugify_for_windows(base_var.get() or "reporte")}
-    def _on_base_change(*_):
-        """Auto-generated docstring for `_on_base_change`."""
+
+    def _on_base_change(*_args: object) -> None:
+        """Synchronize caches and optionally clear history when the base changes."""
+
         new_base = controller.slugify_for_windows(base_var.get() or "reporte")
         old_base = prev_base["val"]
         if not old_base or new_base == old_base:
+            return
+        if not auto_paths_state.get("enabled", True):
+            prev_base["val"] = new_base
             return
         ev_old = evidence_dir / old_base
         has_hist = bool(session.get("steps")) if isinstance(session, dict) else False
         has_old_dir = ev_old.exists()
         if has_hist or has_old_dir:
-            if Messagebox.askyesno("Cambio de nombre",f"Se cambió el nombre base de '{old_base}' a '{new_base}'. ¿Limpiar historial en la GUI? (Las evidencias en disco no se tocan)"):
+            if Messagebox.askyesno(
+                "Cambio de nombre",
+                f"Se cambió el nombre base de '{old_base}' a '{new_base}'. ¿Limpiar historial en la GUI? (Las evidencias en disco no se tocan)",
+            ):
                 _clear_evidence_for(old_base, also_clear_session=True)
                 status.set(f"🧹 Historial limpiado. Evidencias en disco conservadas para: {old_base}")
             prev_base["val"] = new_base
     
     base_var.trace_add("write", _on_base_change)
     
-    status = tb.StringVar(value="Listo.")
     status_bar = tb.Label(root, textvariable=status, bootstyle=INFO, anchor=W, padding=(16,6)); status_bar.pack(fill=X)
     
     session_saved = {"val": False}
@@ -198,11 +722,24 @@ def build_pruebas_view(
     
     def start_evidence_session() -> None:
         """Start a new evidence session and reset the UI state."""
-    
+
+        if _is_dashboard_editing():
+            if not Messagebox.askyesno(
+                "Sesión",
+                "Se descartará la edición de la sesión cargada desde el tablero. ¿Continuar?",
+            ):
+                return
+            _clear_dashboard_edit_mode()
+            _cancel_timer()
+            session_state.update({"active": False, "paused": False, "timerJob": None})
+            session["steps"].clear()
+            session_saved["val"] = False
+            _refresh_evidence_tree()
+            timer_var.set(format_elapsed(0))
         if session_state["active"]:
             Messagebox.showwarning("Sesión", "Ya hay una sesión activa en curso.")
             return
-    
+
         base_name = controller.slugify_for_windows(base_var.get() or "reporte") or "reporte"
         session_title = (base_var.get() or "Incidencia").strip() or base_name
         session["title"] = session_title
@@ -661,7 +1198,12 @@ def build_pruebas_view(
         # Si aún no se ha guardado (DONE o Importar Confluence), pedir confirmación
         if not session_saved["val"]:
             if not Messagebox.askyesno("Limpiar caché (solo GUI)","Aún no has guardado con DONE ni Importar Confluence.¿Deseas limpiar SOLO el historial en la GUI de todas formas?(No se borrarán archivos de evidencia.)"):return
-    
+
+        if _is_dashboard_editing():
+            _clear_dashboard_edit_mode()
+            session_state.update({"active": False, "paused": False, "timerJob": None})
+            _cancel_timer()
+            timer_var.set(format_elapsed(0))
         base = controller.slugify_for_windows(base_var.get() or "reporte")
         _clear_evidence_for(base, also_clear_session=True)
         status.set("🧹 Caché limpiado en la GUI. Las evidencias en disco se mantienen intactas.")
@@ -690,4 +1232,19 @@ def build_pruebas_view(
     btn_limpiar.pack(side=RIGHT, padx=(8,0))
     tb.Button(controls_bar, text="✅ DONE", command=generar_doc, bootstyle=WARNING, width=12).pack(side=RIGHT)
 
-    return PruebasViewContext(controls_bar)
+    context = PruebasViewContext(
+        buttons=controls_bar,
+        notebook=notebook,
+        dashboardTab=dashboard_tab,
+        sessionTab=session_tab,
+    )
+
+    def _sync_controls(_event: Optional[object] = None) -> None:
+        """Update the visibility of the control bar when the tab changes."""
+
+        context.refresh_controls_visibility()
+
+    notebook.bind("<<NotebookTabChanged>>", _sync_controls, add="+")
+    context.refresh_controls_visibility()
+
+    return context

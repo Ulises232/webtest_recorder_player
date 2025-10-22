@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.7.0] - 2024-05-31
+### Added
+- Tablero inicial en la sección de pruebas con tabla moderna, acciones rápidas y botón para crear sesiones nuevas.
+- Acciones para ver, editar, eliminar y preparar la descarga de sesiones directamente desde la interfaz.
+- Métodos en `SessionDAO`, `SessionService` y `MainController` para listar, actualizar y eliminar sesiones existentes.
+- Botón **Actualizar sesión** dentro de la pestaña de evidencias para guardar los metadatos cargados desde el tablero.
+
+### Changed
+- La vista de pruebas ahora organiza el flujo en pestañas y solo muestra los controles inferiores cuando corresponde.
+ - Los controles del tablero de sesiones mantienen un estilo caricaturesco y ahora exhiben botones de acciones con tipografía destacada en lugar de iconos.
+- La acción **Editar** abre la pestaña principal de evidencias reutilizando todas las herramientas (incluida la edición de capturas) en lugar de mostrar una ventana modal separada.
+- Las acciones dentro del tablero ahora se renderizan como botones azules al estilo de **Crear sesión**, conservando las restricciones para propietarios.
+- Los botones de acciones del tablero usan una variante compacta que mantiene el estilo azul sin dominar el contenido de cada fila.
+
+### Fixed
+- Se impide editar o eliminar sesiones creadas por otros usuarios mostrando avisos claros en la tabla.
+- Se corrigió la alineación de la tabla del tablero de sesiones para que coincida con los encabezados y conserve el estilo azul.
+- Se reordenó el tablero para que la tabla permanezca debajo de los controles principales de creación y actualización.
+
 ## [0.6.1] - 2024-05-30
 ### Added
 - Vistas independientes para generación automática, generación manual y pruebas con sus componentes encapsulados dentro de `app/views`.

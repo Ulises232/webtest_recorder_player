@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Callable, List, Optional
 
 if TYPE_CHECKING:  # pragma: no cover - only used for typing
     import pymssql
@@ -24,6 +24,48 @@ class SessionDAO:
 
         self._connection_factory = connection_factory
         self._schema_ready = False
+
+    @staticmethod
+    def _row_to_dto(row: tuple) -> SessionDTO:
+        """Convert a database row into a session DTO."""
+
+        started_raw = row[6]
+        ended_raw = row[7]
+        created_raw = row[9]
+        updated_raw = row[10]
+        started_at = (
+            started_raw
+            if isinstance(started_raw, datetime)
+            else datetime.fromisoformat(str(started_raw))
+        )
+        ended_at = (
+            ended_raw
+            if isinstance(ended_raw, datetime) or ended_raw is None
+            else datetime.fromisoformat(str(ended_raw))
+        )
+        created_at = (
+            created_raw
+            if isinstance(created_raw, datetime)
+            else datetime.fromisoformat(str(created_raw))
+        )
+        updated_at = (
+            updated_raw
+            if isinstance(updated_raw, datetime)
+            else datetime.fromisoformat(str(updated_raw))
+        )
+        return SessionDTO(
+            sessionId=int(row[0]) if row[0] is not None else None,
+            name=str(row[1] or ""),
+            initialUrl=str(row[2] or ""),
+            docxUrl=str(row[3] or ""),
+            evidencesUrl=str(row[4] or ""),
+            durationSeconds=int(row[5] or 0),
+            startedAt=started_at,
+            endedAt=ended_at,
+            username=str(row[8] or ""),
+            createdAt=created_at,
+            updatedAt=updated_at,
+        )
 
     def _ensure_schema(self) -> None:
         """Create the sessions table on first use."""
@@ -225,16 +267,97 @@ class SessionDAO:
         if not row:
             return None
 
-        return SessionDTO(
-            sessionId=int(row[0]) if row[0] is not None else None,
-            name=str(row[1] or ""),
-            initialUrl=str(row[2] or ""),
-            docxUrl=str(row[3] or ""),
-            evidencesUrl=str(row[4] or ""),
-            durationSeconds=int(row[5] or 0),
-            startedAt=row[6] if isinstance(row[6], datetime) else datetime.fromisoformat(str(row[6])),
-            endedAt=row[7] if isinstance(row[7], datetime) or row[7] is None else datetime.fromisoformat(str(row[7])),
-            username=str(row[8] or ""),
-            createdAt=row[9] if isinstance(row[9], datetime) else datetime.fromisoformat(str(row[9])),
-            updatedAt=row[10] if isinstance(row[10], datetime) else datetime.fromisoformat(str(row[10])),
-        )
+        return self._row_to_dto(row)
+
+    def list_sessions(self, limit: int = 100, username: Optional[str] = None) -> List[SessionDTO]:
+        """Return the most recent sessions optionally filtered by user."""
+
+        self._ensure_schema()
+        try:
+            connection = self._connection_factory()
+        except DatabaseConnectorError as exc:  # pragma: no cover - depends on environment
+            raise SessionDAOError(str(exc)) from exc
+
+        try:
+            cursor = connection.cursor()
+            clauses = [
+                "SELECT session_id, name, initial_url, docx_url, evidences_url, duration_seconds,",
+                "started_at, ended_at, username, created_at, updated_at",
+                "FROM dbo.recorder_sessions",
+            ]
+            params: List[object] = []
+            if username:
+                clauses.append("WHERE username = %s")
+                params.append(username)
+            clauses.append("ORDER BY started_at DESC, session_id DESC")
+            clauses.append("OFFSET 0 ROWS FETCH NEXT %s ROWS ONLY")
+            params.append(max(1, int(limit or 1)))
+            cursor.execute(" ".join(clauses), tuple(params))
+            rows = cursor.fetchall() or []
+        except Exception as exc:  # pragma: no cover - depends on driver
+            connection.close()
+            raise SessionDAOError("No fue posible consultar las sesiones registradas.") from exc
+
+        connection.close()
+        return [self._row_to_dto(row) for row in rows]
+
+    def update_session_details(
+        self,
+        session_id: int,
+        name: str,
+        initial_url: str,
+        docx_url: str,
+        evidences_url: str,
+        updated_at: datetime,
+    ) -> None:
+        """Update the editable metadata for an existing session."""
+
+        self._ensure_schema()
+        try:
+            connection = self._connection_factory()
+        except DatabaseConnectorError as exc:  # pragma: no cover - depends on environment
+            raise SessionDAOError(str(exc)) from exc
+
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                (
+                    "UPDATE dbo.recorder_sessions "
+                    "SET name = %s, initial_url = %s, docx_url = %s, evidences_url = %s, updated_at = %s "
+                    "WHERE session_id = %s"
+                ),
+                (name, initial_url, docx_url, evidences_url, updated_at, session_id),
+            )
+            connection.commit()
+        except Exception as exc:  # pragma: no cover - depends on driver
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            connection.close()
+            raise SessionDAOError("No fue posible actualizar la sesión seleccionada.") from exc
+
+        connection.close()
+
+    def delete_session(self, session_id: int) -> None:
+        """Remove a session and its evidences from storage."""
+
+        self._ensure_schema()
+        try:
+            connection = self._connection_factory()
+        except DatabaseConnectorError as exc:  # pragma: no cover - depends on environment
+            raise SessionDAOError(str(exc)) from exc
+
+        try:
+            cursor = connection.cursor()
+            cursor.execute("DELETE FROM dbo.recorder_sessions WHERE session_id = %s", (session_id,))
+            connection.commit()
+        except Exception as exc:  # pragma: no cover - depends on driver
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            connection.close()
+            raise SessionDAOError("No fue posible eliminar la sesión solicitada.") from exc
+
+        connection.close()

@@ -82,6 +82,13 @@ class MainController:
         """Return the cached authenticated user, if any."""
         return self._authenticated_user
 
+    def get_authenticated_username(self) -> str:
+        """Return the username for the authenticated user or an empty string."""
+
+        if not self._authenticated_user or not self._authenticated_user.username:
+            return ""
+        return self._authenticated_user.username
+
     def getSessionsDirectory(self) -> Path:
         """Provide the storage folder for generated session documents."""
 
@@ -180,6 +187,80 @@ class MainController:
             return [], str(exc)
         return evidences, None
 
+    def list_sessions(self, limit: int = 100) -> Tuple[List[SessionDTO], Optional[str]]:
+        """Return the available sessions for the dashboard."""
+
+        try:
+            sessions = self._session_service.list_sessions(limit=limit)
+        except SessionServiceError as exc:
+            return [], str(exc)
+        return sessions, None
+
+    def update_session_details(
+        self,
+        session_id: int,
+        name: str,
+        initial_url: str,
+        docx_url: str,
+        evidences_url: str,
+    ) -> Optional[str]:
+        """Persist metadata changes requested from the dashboard."""
+
+        username = self.get_authenticated_username()
+        try:
+            self._session_service.update_session_details(
+                session_id,
+                name,
+                initial_url,
+                docx_url,
+                evidences_url,
+                username,
+            )
+        except SessionServiceError as exc:
+            return str(exc)
+        return None
+
+    def delete_session(self, session_id: int) -> Optional[str]:
+        """Remove a session when requested from the dashboard."""
+
+        username = self.get_authenticated_username()
+        try:
+            self._session_service.delete_session(session_id, username)
+        except SessionServiceError as exc:
+            return str(exc)
+        return None
+
+    def load_session_for_edit(
+        self,
+        session_id: int,
+    ) -> Tuple[Optional[SessionDTO], List[SessionEvidenceDTO], Optional[str]]:
+        """Return a session and its evidences for dashboard editing."""
+
+        username = self.get_authenticated_username()
+        try:
+            session, evidences = self._session_service.get_session_with_evidences(session_id, username)
+        except SessionServiceError as exc:
+            return None, [], str(exc)
+        return session, evidences, None
+
+    def activate_session_for_dashboard_edit(
+        self,
+        session_id: int,
+    ) -> Tuple[Optional[SessionDTO], List[SessionEvidenceDTO], Optional[str]]:
+        """Load a session and mark it as active so the GUI can edit it."""
+
+        username = self.get_authenticated_username()
+        try:
+            session, evidences = self._session_service.activate_session_for_dashboard_edit(session_id, username)
+        except SessionServiceError as exc:
+            return None, [], str(exc)
+        return session, evidences, None
+
+    def clear_active_session(self) -> None:
+        """Release any active session cached in the service."""
+
+        self._session_service.clear_active_session()
+
     def update_session_evidence(
         self,
         evidence_id: int,
@@ -192,6 +273,32 @@ class MainController:
 
         try:
             self._session_service.update_evidence(evidence_id, file_path, description, considerations, observations)
+        except SessionServiceError as exc:
+            return str(exc)
+        return None
+
+    def update_session_evidence_from_dashboard(
+        self,
+        session_id: int,
+        evidence_id: int,
+        file_path: Path,
+        description: str,
+        considerations: str,
+        observations: str,
+    ) -> Optional[str]:
+        """Persist evidence edits performed from the session dashboard."""
+
+        username = self.get_authenticated_username()
+        try:
+            self._session_service.update_session_evidence_details(
+                session_id,
+                evidence_id,
+                file_path,
+                description,
+                considerations,
+                observations,
+                username,
+            )
         except SessionServiceError as exc:
             return str(exc)
         return None
