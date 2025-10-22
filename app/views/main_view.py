@@ -1351,8 +1351,6 @@ def run_gui():
             prev_base["val"] = new_base
 
     base_var.trace_add("write", _on_base_change)
-    doc_var.trace_add("write", _update_session_outputs)
-    ev_var.trace_add("write", _update_session_outputs)
 
     status = tb.StringVar(value="Listo.")
     status_bar = tb.Label(app, textvariable=status, bootstyle=INFO, anchor=W, padding=(16,6)); status_bar.pack(fill=X)
@@ -1437,6 +1435,9 @@ def run_gui():
         error = controller.update_active_session_outputs(doc_var.get(), ev_var.get())
         if error:
             status.set(f"⚠️ {error}")
+
+    doc_var.trace_add("write", _update_session_outputs)
+    ev_var.trace_add("write", _update_session_outputs)
 
     def _show_elapsed_message() -> None:
         """Display the elapsed time in a dialog."""

@@ -10,6 +10,9 @@
 ### Changed
 - La generación de reportes y la edición de evidencias actualizan las rutas de salida en la sesión activa para mantener sincronizado el almacenamiento.
 
+### Fixed
+- Se corrigió el enlace de los campos de salida para que inicialicen correctamente el seguimiento de la sesión y eviten errores al arrancar la aplicación.
+
 ## [0.5.1] - 2024-05-29
 ### Fixed
 - Normalizada la integración con los cuadros de diálogo para que usen `ttkbootstrap` cuando está disponible y hagan `fallback` a Tkinter, evitando excepciones `AttributeError` y asegurando que los mensajes solo aparezcan en pantalla.
