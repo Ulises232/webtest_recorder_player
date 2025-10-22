@@ -187,6 +187,23 @@ def build_pruebas_view(
         foreground=[("disabled", "#E9E7FF")],
     )
     style.configure(
+        "CartoonAccentSlim.TButton",
+        font=("Segoe UI", 10, "bold"),
+        foreground="#ffffff",
+        background="#6C63FF",
+        padding=(12, 6),
+        borderwidth=0,
+    )
+    style.map(
+        "CartoonAccentSlim.TButton",
+        background=[
+            ("active", "#867DFF"),
+            ("pressed", "#5548d9"),
+            ("disabled", "#B8B3FF"),
+        ],
+        foreground=[("disabled", "#E9E7FF")],
+    )
+    style.configure(
         "CartoonGhost.TButton",
         font=("Segoe UI", 11, "bold"),
         foreground="#414561",
@@ -205,6 +222,56 @@ def build_pruebas_view(
     header_bg = "#E8ECFF"
     row_even_bg = "#ffffff"
     row_odd_bg = "#f5f7fa"
+
+    dashboard_header = tb.Frame(dashboard_tab)
+    dashboard_header.pack(fill=X, pady=(0, 16))
+    tb.Label(
+        dashboard_header,
+        text="Sesiones de pruebas",
+        font=("Segoe UI", 16, "bold"),
+    ).pack(side=LEFT)
+
+    def _get_current_username() -> str:
+        """Return the username of the authenticated operator."""
+
+        return controller.get_authenticated_username().strip()
+
+    def _prepare_new_session_form() -> None:
+        """Reset the inputs before creating a new session."""
+
+        try:
+            base_var.set("reporte")
+        except Exception:
+            pass
+        default_url = controller.DEFAULT_URL
+        urls = controller.load_history(controller.URL_HISTORY_CATEGORY, default_url)
+        try:
+            url_var.set(urls[0] if urls else default_url)
+        except Exception:
+            pass
+        refresh_paths()
+        status.set("🆕 Prepara una nueva sesión de evidencias.")
+
+    def _open_new_session_tab() -> None:
+        """Navigate to the evidence tab to start a new session."""
+
+        _prepare_new_session_form()
+        notebook.select(session_tab)
+
+    tb.Button(
+        dashboard_header,
+        text="🔄 Actualizar",
+        style="CartoonGhost.TButton",
+        command=lambda: _refresh_sessions_table(),
+        compound=LEFT,
+    ).pack(side=RIGHT)
+    tb.Button(
+        dashboard_header,
+        text="✨ Crear sesión",
+        style="CartoonAccent.TButton",
+        command=_open_new_session_tab,
+        compound=LEFT,
+    ).pack(side=RIGHT, padx=(0, 8))
 
     table_container = tb.Frame(dashboard_tab)
     table_container.pack(fill=BOTH, expand=YES)
@@ -269,56 +336,6 @@ def build_pruebas_view(
     sessions_rows_holder.bind("<Configure>", _update_sessions_scrollregion, add="+")
     bind_mousewheel(sessions_canvas, sessions_canvas.yview)
 
-    dashboard_header = tb.Frame(dashboard_tab)
-    dashboard_header.pack(fill=X, pady=(0, 16))
-    tb.Label(
-        dashboard_header,
-        text="Sesiones de pruebas",
-        font=("Segoe UI", 16, "bold"),
-    ).pack(side=LEFT)
-
-    def _get_current_username() -> str:
-        """Return the username of the authenticated operator."""
-
-        return controller.get_authenticated_username().strip()
-
-    def _prepare_new_session_form() -> None:
-        """Reset the inputs before creating a new session."""
-
-        try:
-            base_var.set("reporte")
-        except Exception:
-            pass
-        default_url = controller.DEFAULT_URL
-        urls = controller.load_history(controller.URL_HISTORY_CATEGORY, default_url)
-        try:
-            url_var.set(urls[0] if urls else default_url)
-        except Exception:
-            pass
-        refresh_paths()
-        status.set("🆕 Prepara una nueva sesión de evidencias.")
-
-    def _open_new_session_tab() -> None:
-        """Navigate to the evidence tab to start a new session."""
-
-        _prepare_new_session_form()
-        notebook.select(session_tab)
-
-    tb.Button(
-        dashboard_header,
-        text="🔄 Actualizar",
-        style="CartoonGhost.TButton",
-        command=lambda: _refresh_sessions_table(),
-        compound=LEFT,
-    ).pack(side=RIGHT)
-    tb.Button(
-        dashboard_header,
-        text="✨ Crear sesión",
-        style="CartoonAccent.TButton",
-        command=_open_new_session_tab,
-        compound=LEFT,
-    ).pack(side=RIGHT, padx=(0, 8))
-
     def _refresh_sessions_table() -> None:
         """Reload the table with the latest sessions from the service."""
 
@@ -378,9 +395,9 @@ def build_pruebas_view(
                 btn = tb.Button(
                     actions_frame,
                     text=label,
-                    style="CartoonAccent.TButton",
+                    style="CartoonAccentSlim.TButton",
                     command=handler,
-                    width=12,
+                    width=9,
                 )
                 if not enabled:
                     btn.configure(state="disabled")
