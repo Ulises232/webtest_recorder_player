@@ -52,6 +52,56 @@ CREATE TABLE dbo.history_entries (
 CREATE INDEX ix_history_entries_category_created_at
     ON dbo.history_entries (category, created_at DESC, entry_id DESC);
 
+CREATE TABLE dbo.recorder_sessions (
+    session_id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    name NVARCHAR(255) NOT NULL,
+    initial_url NVARCHAR(2048) NULL,
+    docx_url NVARCHAR(2048) NULL,
+    evidences_url NVARCHAR(2048) NULL,
+    duration_seconds INT NOT NULL DEFAULT 0,
+    started_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    ended_at DATETIME2(0) NULL,
+    username NVARCHAR(255) NOT NULL,
+    created_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    updated_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+CREATE INDEX ix_recorder_sessions_started_at
+    ON dbo.recorder_sessions (started_at DESC, session_id DESC);
+
+CREATE TABLE dbo.recorder_session_evidences (
+    evidence_id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    session_id INT NOT NULL,
+    file_name NVARCHAR(512) NOT NULL,
+    file_path NVARCHAR(2048) NOT NULL,
+    description NVARCHAR(MAX) NULL,
+    considerations NVARCHAR(MAX) NULL,
+    observations NVARCHAR(MAX) NULL,
+    created_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    updated_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    elapsed_since_session_start_seconds INT NOT NULL DEFAULT 0,
+    elapsed_since_previous_evidence_seconds INT NULL,
+    CONSTRAINT fk_recorder_evidences_session FOREIGN KEY (session_id)
+        REFERENCES dbo.recorder_sessions(session_id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_recorder_session_evidences_session_created
+    ON dbo.recorder_session_evidences (session_id, created_at ASC, evidence_id ASC);
+
+CREATE TABLE dbo.recorder_session_pauses (
+    pause_id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    session_id INT NOT NULL,
+    paused_at DATETIME2(0) NOT NULL,
+    resumed_at DATETIME2(0) NULL,
+    elapsed_seconds_when_paused INT NOT NULL DEFAULT 0,
+    pause_duration_seconds INT NULL,
+    CONSTRAINT fk_recorder_session_pauses_session FOREIGN KEY (session_id)
+        REFERENCES dbo.recorder_sessions(session_id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_recorder_session_pauses_session
+    ON dbo.recorder_session_pauses (session_id, paused_at DESC, pause_id DESC);
+
 CREATE TABLE dbo.sprints (
     id INT IDENTITY(1,1) PRIMARY KEY,
     branch_key NVARCHAR(512) NOT NULL DEFAULT '',
