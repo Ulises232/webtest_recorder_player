@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.1] - 2024-05-30
+### Added
+- Vistas independientes para generación automática, generación manual y pruebas con sus componentes encapsulados dentro de `app/views`.
+
+### Changed
+- `main_view.py` delega la construcción de cada sección del menú a módulos especializados para reducir su tamaño y facilitar el mantenimiento.
+- Nuevas directrices en `AGENTS.md` que obligan a crear un módulo por cada vista expuesta en la ventana principal.
+- El cuadro de inicio de sesión ahora reside en `app/views/login_view.py` y la ventana principal solo lo invoca como módulo independiente.
+
+### Fixed
+- Se corrigió un `NameError` en la vista de pruebas que impedía inicializar los controles inferiores al abrir la aplicación.
+
 ## [0.6.0] - 2024-05-30
 ### Added
 - Tablas `dbo.recorder_sessions`, `dbo.recorder_session_evidences` y `dbo.recorder_session_pauses` documentadas en `docs/database_schema.md` para registrar sesiones, evidencias y pausas desde la aplicación de escritorio.
