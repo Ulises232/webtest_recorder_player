@@ -9,7 +9,7 @@
 
 ### Changed
 - La vista de pruebas ahora organiza el flujo en pestañas y solo muestra los controles inferiores cuando corresponde.
-- Los botones del tablero de sesiones adoptan un estilo caricaturesco con iconografía distintiva para cada acción.
+- Los botones del tablero de sesiones mantienen un estilo caricaturesco y las acciones se muestran como etiquetas tipo botón con texto destacado en lugar de iconos.
 - La acción **Editar** abre la pestaña principal de evidencias reutilizando todas las herramientas (incluida la edición de capturas) en lugar de mostrar una ventana modal separada.
 
 ### Fixed

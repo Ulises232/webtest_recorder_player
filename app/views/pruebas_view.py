@@ -250,7 +250,22 @@ def build_pruebas_view(
     ).pack(side=RIGHT, padx=(0, 8))
 
     action_labels = ("Ver", "Editar", "Eliminar", "Descargar")
-    action_icons = ("🔍", "🎨", "🗑️", "⬇️")
+    action_wrappers = (
+        ("╭", "╮"),
+        ("╔", "╗"),
+        ("╠", "╣"),
+        ("╚", "╝"),
+    )
+
+    def _make_action_badge(label: str, wrappers: tuple[str, str]) -> str:
+        """Render a badge-like string to emulate buttons within the table."""
+
+        edge_left, edge_right = wrappers
+        clean_label = label.upper()
+        filler_width = max(1, 6 - len(clean_label) // 2)
+        filler = "═" * filler_width
+        return f"{edge_left}{filler} {clean_label} {filler}{edge_right}"
+
     sessions_tree = ttk.Treeview(
         dashboard_tab,
         columns=("fecha", "nombre", "usuario", "acciones"),
@@ -293,12 +308,10 @@ def build_pruebas_view(
             is_owner = session_obj.username.lower() == current_username and bool(current_username)
             row_labels = []
             for action_index, base_label in enumerate(action_labels):
-                icon = action_icons[action_index]
                 label_text = base_label
                 if action_index in (1, 2) and not is_owner:
-                    icon = "🔒"
                     label_text = f"{base_label} (solo propietario)"
-                row_labels.append(f"{icon} {label_text}")
+                row_labels.append(_make_action_badge(label_text, action_wrappers[action_index]))
             sessions_tree.insert(
                 "",
                 "end",
