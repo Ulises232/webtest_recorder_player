@@ -8,7 +8,7 @@ from typing import Callable, Dict, List, Optional
 import os
 import time
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk
 
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *  # noqa: F401,F403
@@ -96,6 +96,36 @@ def build_pruebas_view(
     Messagebox = messagebox_service
     status = tb.StringVar(value="Listo.")
 
+    dashboard_edit_state: Dict[str, Optional[int]] = {"sessionId": None}
+
+    def _is_dashboard_editing() -> bool:
+        """Return whether a session loaded from the dashboard is being edited."""
+
+        return bool(dashboard_edit_state.get("sessionId"))
+
+    def _save_loaded_session_changes() -> None:
+        """Persist metadata updates for the session opened from the dashboard."""
+
+        session_id = dashboard_edit_state.get("sessionId")
+        if not session_id:
+            Messagebox.showinfo("Sesión", "Selecciona una sesión del tablero antes de guardar.")
+            return
+        error_msg = controller.update_session_details(
+            session_id,
+            base_var.get().strip(),
+            url_var.get().strip(),
+            doc_var.get().strip(),
+            ev_var.get().strip(),
+        )
+        if error_msg:
+            Messagebox.showerror("Sesión", error_msg)
+            return
+        prev_base["val"] = controller.slugify_for_windows(base_var.get() or "reporte")
+        session["title"] = (base_var.get() or session.get("title", "")).strip() or session.get("title", "")
+        session_saved["val"] = True
+        status.set("💾 Sesión actualizada desde el editor.")
+        _refresh_sessions_table()
+
     notebook = tb.Notebook(parent, bootstyle="secondary")
     notebook.pack(fill=BOTH, expand=YES)
 
@@ -116,6 +146,15 @@ def build_pruebas_view(
     urls = controller.load_history(controller.URL_HISTORY_CATEGORY, controller.DEFAULT_URL)
     url_var = tb.StringVar(value=urls[0] if urls else controller.DEFAULT_URL)
     tb.Combobox(card1, textvariable=url_var, values=urls, width=56, bootstyle="light").grid(row=2, column=1, sticky=EW, pady=(10,2))
+
+    btn_save_session = tb.Button(
+        card1,
+        text="Actualizar sesión",
+        bootstyle=SUCCESS,
+        command=_save_loaded_session_changes,
+        state="disabled",
+    )
+    btn_save_session.grid(row=4, column=1, sticky=E, pady=(12, 0))
     
     card2 = tb.Labelframe(parent, text="Salidas", bootstyle=SECONDARY, padding=12)
     card2.pack(fill=X, pady=(0,12)); card2.columnconfigure(1, weight=1)
@@ -302,254 +341,100 @@ def build_pruebas_view(
             tb.Label(row, text=value or "", font=("Segoe UI", 10), anchor=W, wraplength=520, justify=LEFT).pack(side=LEFT, fill=X, expand=YES, padx=(8, 0))
         tb.Button(frm, text="Cerrar", command=win.destroy, bootstyle=SECONDARY, width=18).pack(anchor=E, pady=(16, 0))
 
+    def _map_evidence_to_step(evidence: SessionEvidenceDTO) -> Dict[str, object]:
+        """Translate a persisted evidence to the in-memory representation."""
+
+        shots: List[str] = []
+        if evidence.filePath:
+            shots.append(evidence.filePath)
+        return {
+            "id": evidence.evidenceId,
+            "cmd": evidence.fileName or "Evidencia",
+            "shots": shots,
+            "desc": evidence.description or "",
+            "consideraciones": evidence.considerations or "",
+            "observacion": evidence.observations or "",
+            "createdAt": evidence.createdAt,
+            "elapsedSinceStart": evidence.elapsedSinceSessionStartSeconds,
+            "elapsedSincePrevious": evidence.elapsedSincePreviousEvidenceSeconds,
+        }
+
+    def _populate_session_from_evidences(evidences: List[SessionEvidenceDTO]) -> None:
+        """Replace the in-memory steps with evidences pulled from storage."""
+
+        session["steps"].clear()
+        for evidence in evidences:
+            session["steps"].append(_map_evidence_to_step(evidence))
+        _refresh_evidence_tree()
+
+    def _clear_dashboard_edit_mode() -> None:
+        """Disable dashboard-specific editing controls and reset labels."""
+
+        if not dashboard_edit_state.get("sessionId"):
+            return
+        dashboard_edit_state["sessionId"] = None
+        try:
+            controller.clear_active_session()
+        except Exception:
+            pass
+        try:
+            btn_save_session.configure(state="disabled")
+        except Exception:
+            pass
+        try:
+            btn_session_start.configure(text="Iniciar sesión")
+        except Exception:
+            pass
+
     def _open_session_editor(session_obj: SessionDTO) -> None:
-        """Allow the owner to edit both metadata and evidences."""
+        """Load the session into the evidence tab for inline editing."""
 
         current_username = _get_current_username()
         if not current_username or session_obj.username.lower() != current_username.lower():
             Messagebox.showwarning("Sesión", "Solo el usuario que creó la sesión puede editarla.")
             return
 
-        session_payload, evidences, error = controller.load_session_for_edit(session_obj.sessionId or 0)
+        if _is_dashboard_editing():
+            _clear_dashboard_edit_mode()
+
+        session_payload, evidences, error = controller.activate_session_for_dashboard_edit(session_obj.sessionId or 0)
         if error:
             Messagebox.showerror("Sesión", error)
             return
 
-        editor_state: Dict[str, object] = {
-            "session": session_payload or session_obj,
-            "evidences": evidences,
-        }
+        loaded_session = session_payload or session_obj
+        dashboard_edit_state["sessionId"] = loaded_session.sessionId
 
-        win = tb.Toplevel(root)
-        win.title(f"Editar sesión · {session_obj.name}")
-        win.transient(root)
-        win.grab_set()
-        win.geometry("940x600")
-        win.minsize(840, 520)
+        auto_paths_state["enabled"] = False
+        try:
+            base_var.set(loaded_session.name or "")
+            url_var.set(loaded_session.initialUrl or "")
+            doc_var.set(loaded_session.docxUrl or "")
+            ev_var.set(loaded_session.evidencesUrl or "")
+        finally:
+            auto_paths_state["enabled"] = True
 
-        container = tb.Frame(win, padding=20)
-        container.pack(fill=BOTH, expand=YES)
+        prev_base["val"] = controller.slugify_for_windows(base_var.get() or "reporte")
+        session["title"] = loaded_session.name or ""
+        session["sessionId"] = loaded_session.sessionId
+        _populate_session_from_evidences(evidences)
+        session_saved["val"] = True
 
-        tb.Label(container, text="🎨 Editar sesión de pruebas", font=("Segoe UI", 16, "bold")).pack(anchor=W)
-        tb.Label(
-            container,
-            text="Actualiza los datos generales y administra las evidencias capturadas.",
-            font=("Segoe UI", 10),
-        ).pack(anchor=W, pady=(4, 16))
+        _cancel_timer()
+        session_state.update({"active": True, "paused": True, "timerJob": None})
+        timer_var.set(format_elapsed(loaded_session.durationSeconds or 0))
 
-        local_status = tb.StringVar(value="Selecciona una evidencia para editarla.")
+        try:
+            btn_session_start.configure(state="disabled", text="Sesión cargada")
+            btn_session_pause.configure(state="disabled", text="Pausar sesión")
+            btn_session_finish.configure(state="disabled")
+            btn_save_session.configure(state="normal")
+        except Exception:
+            pass
 
-        metadata_card = tb.Labelframe(container, text="Datos de la sesión", padding=16, bootstyle=INFO)
-        metadata_card.pack(fill=X)
-        metadata_card.columnconfigure(1, weight=1)
-
-        name_var = tb.StringVar(value=(editor_state["session"].name if isinstance(editor_state["session"], SessionDTO) else session_obj.name))
-        url_var_edit = tb.StringVar(value=(editor_state["session"].initialUrl if isinstance(editor_state["session"], SessionDTO) else session_obj.initialUrl))
-        doc_var_edit = tb.StringVar(value=(editor_state["session"].docxUrl if isinstance(editor_state["session"], SessionDTO) else session_obj.docxUrl))
-        evid_var_edit = tb.StringVar(value=(editor_state["session"].evidencesUrl if isinstance(editor_state["session"], SessionDTO) else session_obj.evidencesUrl))
-
-        def _build_row(parent: tb.Frame, label: str, variable: tk.StringVar, row_index: int) -> None:
-            """Render a labelled entry row within the session metadata card."""
-
-            tb.Label(parent, text=label, font=("Segoe UI", 10, "bold")).grid(row=row_index, column=0, sticky=W, pady=4)
-            tb.Entry(parent, textvariable=variable).grid(row=row_index, column=1, sticky=EW, padx=(12, 0), pady=4)
-
-        _build_row(metadata_card, "Nombre", name_var, 0)
-        _build_row(metadata_card, "URL inicial", url_var_edit, 1)
-        _build_row(metadata_card, "Documento", doc_var_edit, 2)
-        _build_row(metadata_card, "Carpeta evidencias", evid_var_edit, 3)
-
-        def _reload_session_data(update_form: bool = False) -> None:
-            """Refresh metadata and evidence listings from the controller."""
-
-            refreshed_session, refreshed_evidences, refresh_error = controller.load_session_for_edit(session_obj.sessionId or 0)
-            if refresh_error:
-                local_status.set(refresh_error)
-                return
-            editor_state["session"] = refreshed_session or editor_state["session"]
-            editor_state["evidences"] = refreshed_evidences
-            if update_form and isinstance(editor_state["session"], SessionDTO):
-                session_meta = editor_state["session"]
-                name_var.set(session_meta.name)
-                url_var_edit.set(session_meta.initialUrl)
-                doc_var_edit.set(session_meta.docxUrl)
-                evid_var_edit.set(session_meta.evidencesUrl)
-            _render_evidences()
-
-        def _save_session_changes() -> None:
-            """Persist metadata updates and refresh the dashboard."""
-
-            error_msg = controller.update_session_details(
-                session_obj.sessionId or 0,
-                name_var.get().strip(),
-                url_var_edit.get().strip(),
-                doc_var_edit.get().strip(),
-                evid_var_edit.get().strip(),
-            )
-            if error_msg:
-                Messagebox.showerror("Sesión", error_msg)
-                return
-            status.set("✏️ Sesión actualizada correctamente.")
-            local_status.set("Sesión actualizada correctamente.")
-            _reload_session_data(update_form=True)
-            _refresh_sessions_table()
-
-        btns = tb.Frame(metadata_card)
-        btns.grid(row=4, column=0, columnspan=2, sticky=E, pady=(12, 0))
-        tb.Button(btns, text="Cancelar", command=win.destroy, style="CartoonGhost.TButton", compound=LEFT).pack(side=RIGHT, padx=(8, 0))
-        tb.Button(btns, text="Guardar cambios", command=_save_session_changes, style="CartoonAccent.TButton", compound=LEFT).pack(side=RIGHT)
-
-        evidence_card = tb.Labelframe(container, text="Evidencias registradas", padding=16, bootstyle=INFO)
-        evidence_card.pack(fill=BOTH, expand=YES, pady=(20, 0))
-        evidence_card.columnconfigure(0, weight=1)
-
-        columns = ("#", "Archivo", "Descripción", "Notas", "Actualizado")
-        evidence_tree = ttk.Treeview(evidence_card, columns=columns, show="headings", height=8)
-        evidence_tree.heading("#", text="#")
-        evidence_tree.heading("Archivo", text="Archivo")
-        evidence_tree.heading("Descripción", text="Descripción")
-        evidence_tree.heading("Notas", text="Notas")
-        evidence_tree.heading("Actualizado", text="Actualizado")
-        evidence_tree.column("#", width=50, anchor="center")
-        evidence_tree.column("Archivo", width=220, anchor="w")
-        evidence_tree.column("Descripción", width=220, anchor="w")
-        evidence_tree.column("Notas", width=240, anchor="w")
-        evidence_tree.column("Actualizado", width=160, anchor="center")
-        evidence_tree.grid(row=0, column=0, sticky=NSEW)
-
-        evidence_card.rowconfigure(0, weight=1)
-        vsb = ttk.Scrollbar(evidence_card, orient="vertical", command=evidence_tree.yview)
-        evidence_tree.configure(yscrollcommand=vsb.set)
-        vsb.grid(row=0, column=1, sticky=NS)
-
-        evidence_registry: Dict[str, SessionEvidenceDTO] = {}
-
-        def _render_evidences() -> None:
-            """Render the evidence rows inside the editor."""
-
-            evidence_tree.delete(*evidence_tree.get_children())
-            evidence_registry.clear()
-            items: List[SessionEvidenceDTO] = []
-            if isinstance(editor_state.get("evidences"), list):
-                items = [item for item in editor_state["evidences"] if isinstance(item, SessionEvidenceDTO)]
-            for idx, evidence in enumerate(items, start=1):
-                row_id = str(evidence.evidenceId or idx)
-                evidence_registry[row_id] = evidence
-                notes_parts = [part for part in (evidence.considerations, evidence.observations) if part]
-                evidence_tree.insert(
-                    "",
-                    "end",
-                    iid=row_id,
-                    values=(
-                        idx,
-                        evidence.fileName or Path(evidence.filePath).name,
-                        evidence.description,
-                        " · ".join(notes_parts),
-                        format_timestamp(evidence.updatedAt),
-                    ),
-                )
-            if not items:
-                local_status.set("No hay evidencias registradas en la sesión.")
-
-        def _open_evidence_editor(evidence: SessionEvidenceDTO) -> None:
-            """Display a modal dialog to edit an evidence entry."""
-
-            editor = tb.Toplevel(win)
-            editor.title(f"Editar evidencia · {evidence.fileName}")
-            editor.transient(win)
-            editor.grab_set()
-            frm = tb.Frame(editor, padding=16)
-            frm.pack(fill=BOTH, expand=YES)
-
-            file_var = tb.StringVar(value=evidence.filePath)
-            desc_var = tb.StringVar(value=evidence.description)
-            cons_var = tb.StringVar(value=evidence.considerations)
-            obs_var = tb.StringVar(value=evidence.observations)
-
-            def _build_input(label: str, variable: tk.StringVar, row_index: int, with_browser: bool = False) -> None:
-                """Render an entry row within the evidence editor modal."""
-
-                row = tb.Frame(frm)
-                row.pack(fill=X, pady=4)
-                tb.Label(row, text=label, font=("Segoe UI", 10, "bold"), width=16, anchor=E).pack(side=LEFT)
-                entry = tb.Entry(row, textvariable=variable, width=64)
-                entry.pack(side=LEFT, fill=X, expand=YES, padx=(10, 0))
-                if with_browser:
-                    def _browse() -> None:
-                        """Open a file dialog to select a replacement path."""
-
-                        initial_dir = None
-                        try:
-                            initial_dir = str(Path(variable.get()).parent)
-                        except Exception:
-                            initial_dir = None
-                        selected = filedialog.askopenfilename(initialdir=initial_dir)
-                        if selected:
-                            variable.set(selected)
-
-                    tb.Button(row, text="Buscar", style="CartoonGhost.TButton", command=_browse, width=10).pack(side=LEFT, padx=(10, 0))
-
-            _build_input("Archivo", file_var, 0, with_browser=True)
-            _build_input("Descripción", desc_var, 1)
-            _build_input("Consideraciones", cons_var, 2)
-            _build_input("Observaciones", obs_var, 3)
-
-            def _persist() -> None:
-                """Validate and persist evidence changes."""
-
-                new_path_raw = file_var.get().strip()
-                if not new_path_raw:
-                    Messagebox.showwarning("Evidencia", "Selecciona un archivo para la evidencia.")
-                    return
-                new_path = Path(new_path_raw)
-                error_msg = controller.update_session_evidence_from_dashboard(
-                    session_obj.sessionId or 0,
-                    evidence.evidenceId or 0,
-                    new_path,
-                    desc_var.get().strip(),
-                    cons_var.get().strip(),
-                    obs_var.get().strip(),
-                )
-                if error_msg:
-                    Messagebox.showerror("Evidencia", error_msg)
-                    return
-                editor.destroy()
-                status.set("🎨 Evidencia actualizada correctamente.")
-                local_status.set("Evidencia actualizada correctamente.")
-                _reload_session_data(update_form=False)
-                _refresh_sessions_table()
-
-            buttons_row = tb.Frame(frm)
-            buttons_row.pack(fill=X, pady=(12, 0))
-            tb.Button(buttons_row, text="Cancelar", style="CartoonGhost.TButton", command=editor.destroy, width=14).pack(side=RIGHT, padx=(8, 0))
-            tb.Button(buttons_row, text="Guardar", style="CartoonAccent.TButton", command=_persist, width=14).pack(side=RIGHT)
-
-        def _edit_selected_evidence() -> None:
-            """Open the editor for the currently selected evidence."""
-
-            selection = evidence_tree.selection()
-            if not selection:
-                Messagebox.showinfo("Evidencia", "Selecciona una evidencia para editarla.")
-                return
-            evidence = evidence_registry.get(selection[0])
-            if not evidence:
-                Messagebox.showerror("Evidencia", "No fue posible cargar la evidencia seleccionada.")
-                return
-            _open_evidence_editor(evidence)
-
-        evidence_actions = tb.Frame(evidence_card)
-        evidence_actions.grid(row=1, column=0, columnspan=2, sticky=E, pady=(12, 0))
-        tb.Button(
-            evidence_actions,
-            text="Editar evidencia",
-            style="CartoonAccent.TButton",
-            command=_edit_selected_evidence,
-            compound=LEFT,
-        ).pack(side=RIGHT)
-
-        _render_evidences()
-
-        tb.Label(container, textvariable=local_status, anchor=W, bootstyle=SECONDARY, padding=(12, 6)).pack(fill=X, pady=(16, 0))
+        status.set(f"✏️ Editando la sesión '{loaded_session.name}'.")
+        notebook.select(session_tab)
+        notebook.focus_set()
 
     def _confirm_delete_session(session_obj) -> None:
         """Ask for confirmation before removing the session."""
@@ -610,27 +495,42 @@ def build_pruebas_view(
     sessions_tree.bind("<Double-1>", lambda event: _on_sessions_tree_click(event))
 
     _refresh_sessions_table()
-    
-    def refresh_paths(*_):
-        """Auto-generated docstring for `refresh_paths`."""
+
+    auto_paths_state = {"enabled": True}
+
+    def refresh_paths(*_args: object) -> None:
+        """Compute default output locations when the base name changes."""
+
+        if not auto_paths_state.get("enabled", True):
+            return
         base = controller.slugify_for_windows(base_var.get() or "reporte")
         final = f"{base}"
         doc_var.set(str(sessions_dir / f"{final}.docx"))
         ev_var.set(str(evidence_dir / final))
-    base_var.trace_add("write", refresh_paths); refresh_paths()
-    
+
+    base_var.trace_add("write", refresh_paths)
+    refresh_paths()
+
     prev_base = {"val": controller.slugify_for_windows(base_var.get() or "reporte")}
-    def _on_base_change(*_):
-        """Auto-generated docstring for `_on_base_change`."""
+
+    def _on_base_change(*_args: object) -> None:
+        """Synchronize caches and optionally clear history when the base changes."""
+
         new_base = controller.slugify_for_windows(base_var.get() or "reporte")
         old_base = prev_base["val"]
         if not old_base or new_base == old_base:
+            return
+        if not auto_paths_state.get("enabled", True):
+            prev_base["val"] = new_base
             return
         ev_old = evidence_dir / old_base
         has_hist = bool(session.get("steps")) if isinstance(session, dict) else False
         has_old_dir = ev_old.exists()
         if has_hist or has_old_dir:
-            if Messagebox.askyesno("Cambio de nombre",f"Se cambió el nombre base de '{old_base}' a '{new_base}'. ¿Limpiar historial en la GUI? (Las evidencias en disco no se tocan)"):
+            if Messagebox.askyesno(
+                "Cambio de nombre",
+                f"Se cambió el nombre base de '{old_base}' a '{new_base}'. ¿Limpiar historial en la GUI? (Las evidencias en disco no se tocan)",
+            ):
                 _clear_evidence_for(old_base, also_clear_session=True)
                 status.set(f"🧹 Historial limpiado. Evidencias en disco conservadas para: {old_base}")
             prev_base["val"] = new_base
@@ -731,11 +631,24 @@ def build_pruebas_view(
     
     def start_evidence_session() -> None:
         """Start a new evidence session and reset the UI state."""
-    
+
+        if _is_dashboard_editing():
+            if not Messagebox.askyesno(
+                "Sesión",
+                "Se descartará la edición de la sesión cargada desde el tablero. ¿Continuar?",
+            ):
+                return
+            _clear_dashboard_edit_mode()
+            _cancel_timer()
+            session_state.update({"active": False, "paused": False, "timerJob": None})
+            session["steps"].clear()
+            session_saved["val"] = False
+            _refresh_evidence_tree()
+            timer_var.set(format_elapsed(0))
         if session_state["active"]:
             Messagebox.showwarning("Sesión", "Ya hay una sesión activa en curso.")
             return
-    
+
         base_name = controller.slugify_for_windows(base_var.get() or "reporte") or "reporte"
         session_title = (base_var.get() or "Incidencia").strip() or base_name
         session["title"] = session_title
@@ -1194,7 +1107,12 @@ def build_pruebas_view(
         # Si aún no se ha guardado (DONE o Importar Confluence), pedir confirmación
         if not session_saved["val"]:
             if not Messagebox.askyesno("Limpiar caché (solo GUI)","Aún no has guardado con DONE ni Importar Confluence.¿Deseas limpiar SOLO el historial en la GUI de todas formas?(No se borrarán archivos de evidencia.)"):return
-    
+
+        if _is_dashboard_editing():
+            _clear_dashboard_edit_mode()
+            session_state.update({"active": False, "paused": False, "timerJob": None})
+            _cancel_timer()
+            timer_var.set(format_elapsed(0))
         base = controller.slugify_for_windows(base_var.get() or "reporte")
         _clear_evidence_for(base, also_clear_session=True)
         status.set("🧹 Caché limpiado en la GUI. Las evidencias en disco se mantienen intactas.")

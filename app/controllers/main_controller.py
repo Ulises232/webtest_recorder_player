@@ -243,6 +243,24 @@ class MainController:
             return None, [], str(exc)
         return session, evidences, None
 
+    def activate_session_for_dashboard_edit(
+        self,
+        session_id: int,
+    ) -> Tuple[Optional[SessionDTO], List[SessionEvidenceDTO], Optional[str]]:
+        """Load a session and mark it as active so the GUI can edit it."""
+
+        username = self.get_authenticated_username()
+        try:
+            session, evidences = self._session_service.activate_session_for_dashboard_edit(session_id, username)
+        except SessionServiceError as exc:
+            return None, [], str(exc)
+        return session, evidences, None
+
+    def clear_active_session(self) -> None:
+        """Release any active session cached in the service."""
+
+        self._session_service.clear_active_session()
+
     def update_session_evidence(
         self,
         evidence_id: int,

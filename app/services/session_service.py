@@ -26,7 +26,7 @@ class ActiveSessionState:
     """Track runtime information for the session timer."""
 
     session: SessionDTO
-    resumeReference: datetime
+    resumeReference: Optional[datetime]
     elapsedSeconds: int
     lastEvidenceAt: Optional[datetime]
     activePause: Optional[SessionPauseDTO]
@@ -349,6 +349,43 @@ class SessionService:
             raise SessionServiceError(str(exc)) from exc
 
         return session, evidences
+
+    def activate_session_for_dashboard_edit(
+        self,
+        session_id: int,
+        requesting_username: str,
+    ) -> tuple[SessionDTO, List[SessionEvidenceDTO]]:
+        """Set an existing session as active so the GUI can edit it."""
+
+        session, evidences = self.get_session_with_evidences(session_id, requesting_username)
+        if self._active_state and self._active_state.session.sessionId != session_id:
+            raise SessionServiceError("Finaliza la sesión activa antes de editar otra desde el tablero.")
+
+        last_evidence_at = evidences[-1].createdAt if evidences else None
+        elapsed_seconds = session.durationSeconds or 0
+
+        if self._active_state and self._active_state.session.sessionId == session_id:
+            state = self._active_state
+            state.session = session
+            state.elapsedSeconds = elapsed_seconds
+            state.lastEvidenceAt = last_evidence_at
+            state.resumeReference = None
+            state.activePause = None
+        else:
+            self._active_state = ActiveSessionState(
+                session=session,
+                resumeReference=None,
+                elapsedSeconds=elapsed_seconds,
+                lastEvidenceAt=last_evidence_at,
+                activePause=None,
+            )
+
+        return session, evidences
+
+    def clear_active_session(self) -> None:
+        """Release the active session reference without persisting changes."""
+
+        self._active_state = None
 
     def update_evidence(
         self,

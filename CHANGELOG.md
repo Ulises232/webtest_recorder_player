@@ -5,11 +5,12 @@
 - Tablero inicial en la sección de pruebas con tabla moderna, acciones rápidas y botón para crear sesiones nuevas.
 - Acciones para ver, editar, eliminar y preparar la descarga de sesiones directamente desde la interfaz.
 - Métodos en `SessionDAO`, `SessionService` y `MainController` para listar, actualizar y eliminar sesiones existentes.
-- Editor integral de sesiones desde la vista de pruebas para actualizar metadatos y evidencias existentes.
+- Botón **Actualizar sesión** dentro de la pestaña de evidencias para guardar los metadatos cargados desde el tablero.
 
 ### Changed
 - La vista de pruebas ahora organiza el flujo en pestañas y solo muestra los controles inferiores cuando corresponde.
 - Los botones del tablero de sesiones adoptan un estilo caricaturesco con iconografía distintiva para cada acción.
+- La acción **Editar** abre la pestaña principal de evidencias reutilizando todas las herramientas (incluida la edición de capturas) en lugar de mostrar una ventana modal separada.
 
 ### Fixed
 - Se impide editar o eliminar sesiones creadas por otros usuarios mostrando avisos claros en la tabla.
