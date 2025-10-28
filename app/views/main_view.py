@@ -238,7 +238,7 @@ def run_gui():
     sidebar = tb.Frame(container, padding=(8,8), width=220)
     sidebar.pack_propagate(False)  # aún no se empaqueta; aparecerá después del primer click
 
-    session_info = controller.get_authenticated_user()
+    session_info = controller.auth.get_authenticated_user()
     if session_info:
         tb.Label(
             sidebar,
