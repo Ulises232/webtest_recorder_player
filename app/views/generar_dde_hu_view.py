@@ -107,7 +107,8 @@ def buildGenerarDdeHuView(
             try:
                 result = controller.listCards(local_filters)
             except CardsControllerError as exc:
-                root.after(0, lambda: Messagebox.showerror("Tarjetas", str(exc)))
+                error_message = str(exc)
+                root.after(0, lambda msg=error_message: Messagebox.showerror("Tarjetas", msg))
                 root.after(0, lambda: status_var.set("No fue posible cargar las tarjetas."))
                 return
 
@@ -326,7 +327,8 @@ def buildGenerarDdeHuView(
             try:
                 outputs = controller.listOutputs(card_id)
             except CardsControllerError as exc:
-                root.after(0, lambda: Messagebox.showerror("Historial", str(exc)))
+                error_message = str(exc)
+                root.after(0, lambda msg=error_message: Messagebox.showerror("Historial", msg))
                 return
 
             def apply() -> None:
@@ -372,7 +374,8 @@ def buildGenerarDdeHuView(
             try:
                 latest = controller.loadLatestInput(card_id)
             except CardsControllerError as exc:
-                root.after(0, lambda: Messagebox.showerror("Entradas", str(exc)))
+                error_message = str(exc)
+                root.after(0, lambda msg=error_message: Messagebox.showerror("Entradas", msg))
                 return
 
             if latest is None:
@@ -411,7 +414,8 @@ def buildGenerarDdeHuView(
             try:
                 record = controller.saveDraft(payload)
             except CardsControllerError as exc:
-                root.after(0, lambda: Messagebox.showerror("Borrador", str(exc)))
+                error_message = str(exc)
+                root.after(0, lambda msg=error_message: Messagebox.showerror("Borrador", msg))
                 root.after(0, lambda: status_var.set("Error al guardar el borrador."))
                 return
             root.after(0, lambda: status_var.set(f"Borrador guardado #{record.inputId}."))
@@ -438,7 +442,8 @@ def buildGenerarDdeHuView(
             try:
                 result = controller.generateDocument(payload)
             except CardsControllerError as exc:
-                root.after(0, lambda: Messagebox.showerror("Generar", str(exc)))
+                error_message = str(exc)
+                root.after(0, lambda msg=error_message: Messagebox.showerror("Generar", msg))
                 root.after(0, lambda: status_var.set("Error al generar el documento."))
                 return
 
@@ -479,7 +484,8 @@ def buildGenerarDdeHuView(
             try:
                 result = controller.regenerateFromInput(input_id_int)
             except CardsControllerError as exc:
-                root.after(0, lambda: Messagebox.showerror("Regenerar", str(exc)))
+                error_message = str(exc)
+                root.after(0, lambda msg=error_message: Messagebox.showerror("Regenerar", msg))
                 root.after(0, lambda: status_var.set("Error al regenerar el documento."))
                 return
 

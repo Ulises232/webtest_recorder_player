@@ -11,6 +11,9 @@
 - `MainController` inicializa el nuevo controlador de tarjetas y lo expone a la interfaz para consumir el LLM a través del backend.
 - `main_view.py` incorpora la vista de generación DDE/HU en el menú principal y la navegación lateral.
 
+### Fixed
+- Corrección en los callbacks asíncronos de la vista **Generar DDE/HU** para mantener el mensaje de error disponible al mostrar cuadros de diálogo y evitar excepciones `NameError`.
+
 ## [0.7.1] - 2024-06-01
 ### Added
 - Controladores especializados para autenticación, historial, navegador, nomenclatura y sesiones que encapsulan la coordinación con sus servicios correspondientes.
