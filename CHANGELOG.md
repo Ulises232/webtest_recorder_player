@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.0] - 2024-06-02
+### Added
+- Vista **Generar DDE/HU** con listado de tarjetas, captura de análisis y recomendación, historial de ejecuciones y exportación de resultados JSON desde `app/views/generar_dde_hu_view.py`.
+- Controlador, servicio, DAOs y DTOs dedicados para coordinar la generación con LLM local incluyendo cálculo de completitud, guardado de borradores y regeneración (`app/controllers/cards_controller.py`, `app/services/card_ai_service.py`, `app/daos/cards_dao.py`, `app/dtos/card_ai_dto.py`, `app/services/llm_client.py`, `app/services/card_prompt_builder.py`).
+- Pruebas unitarias que validan el flujo principal del servicio de tarjetas simulando LLM y persistencia (`tests/test_card_ai_service.py`).
+- Tablas `dbo.cards_ai_inputs` y `dbo.cards_ai_outputs` documentadas en `docs/database_schema.md` para conservar los datos capturados y los resultados generados por IA.
+
+### Changed
+- `MainController` inicializa el nuevo controlador de tarjetas y lo expone a la interfaz para consumir el LLM a través del backend.
+- `main_view.py` incorpora la vista de generación DDE/HU en el menú principal y la navegación lateral.
+
 ## [0.7.1] - 2024-06-01
 ### Added
 - Controladores especializados para autenticación, historial, navegador, nomenclatura y sesiones que encapsulan la coordinación con sus servicios correspondientes.

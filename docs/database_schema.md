@@ -196,6 +196,45 @@ CREATE TABLE dbo.card_scripts (
     CONSTRAINT fk_card_scripts_card FOREIGN KEY (card_id) REFERENCES dbo.cards(id) ON DELETE CASCADE
 );
 
+CREATE TABLE dbo.cards_ai_inputs (
+    input_id BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    card_id BIGINT NOT NULL,
+    tipo VARCHAR(20) NOT NULL,
+    analisis_desc_problema NVARCHAR(MAX) NULL,
+    analisis_revision_sistema NVARCHAR(MAX) NULL,
+    analisis_datos NVARCHAR(MAX) NULL,
+    analisis_comp_reglas NVARCHAR(MAX) NULL,
+    reco_investigacion NVARCHAR(MAX) NULL,
+    reco_solucion_temporal NVARCHAR(MAX) NULL,
+    reco_impl_mejoras NVARCHAR(MAX) NULL,
+    reco_com_stakeholders NVARCHAR(MAX) NULL,
+    reco_documentacion NVARCHAR(MAX) NULL,
+    completeness_pct TINYINT NOT NULL DEFAULT (0),
+    is_draft BIT NOT NULL DEFAULT (1),
+    created_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    updated_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT fk_cards_ai_inputs_card FOREIGN KEY (card_id) REFERENCES dbo.cards(id)
+);
+
+CREATE INDEX ix_cards_ai_inputs_card_id
+    ON dbo.cards_ai_inputs (card_id, updated_at DESC, input_id DESC);
+
+CREATE TABLE dbo.cards_ai_outputs (
+    output_id BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    card_id BIGINT NOT NULL,
+    input_id BIGINT NULL,
+    llm_id VARCHAR(100) NULL,
+    llm_model VARCHAR(100) NULL,
+    llm_usage_json NVARCHAR(MAX) NULL,
+    content_json NVARCHAR(MAX) NOT NULL,
+    created_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT fk_cards_ai_outputs_card FOREIGN KEY (card_id) REFERENCES dbo.cards(id),
+    CONSTRAINT fk_cards_ai_outputs_input FOREIGN KEY (input_id) REFERENCES dbo.cards_ai_inputs(input_id)
+);
+
+CREATE INDEX ix_cards_ai_outputs_card_id
+    ON dbo.cards_ai_outputs (card_id, created_at DESC, output_id DESC);
+
 CREATE TABLE dbo.catalog_companies (
     id INT IDENTITY(1,1) PRIMARY KEY,
     name NVARCHAR(255) NOT NULL UNIQUE,

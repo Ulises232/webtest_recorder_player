@@ -9,20 +9,24 @@ from app.config.storage_paths import (
 )
 from app.controllers.auth_controller import AuthenticationController
 from app.controllers.browser_controller import BrowserController
+from app.controllers.cards_controller import CardsController
 from app.controllers.history_controller import HistoryController
 from app.controllers.naming_controller import NamingController
 from app.controllers.session_controller import SessionController
 from app.daos.database import DatabaseConnector
+from app.daos.cards_dao import CardAIInputDAO, CardAIOutputDAO, CardsDAO
 from app.daos.evidence_dao import SessionEvidenceDAO
 from app.daos.history_dao import HistoryDAO
 from app.daos.session_dao import SessionDAO
 from app.daos.session_pause_dao import SessionPauseDAO
 from app.daos.user_dao import UserDAO
 from app.services.auth_service import AuthService
+from app.services.card_ai_service import CardAIService
 from app.services.browser_service import BrowserService
 from app.services.history_service import HistoryService
 from app.services.naming_service import NamingService
 from app.services.session_service import SessionService
+from app.services.llm_client import LocalLLMClient
 
 
 class MainController:
@@ -67,3 +71,12 @@ class MainController:
             self.SESSIONS_DIR,
             self.EVIDENCE_DIR,
         )
+
+        cards_connector = DatabaseConnector().connection_factory()
+        card_ai_service = CardAIService(
+            CardsDAO(cards_connector),
+            CardAIInputDAO(cards_connector),
+            CardAIOutputDAO(cards_connector),
+            LocalLLMClient(),
+        )
+        self.cards = CardsController(card_ai_service)
