@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.1] - 2024-06-01
+### Added
+- Controladores especializados para autenticación, historial, navegador, nomenclatura y sesiones que encapsulan la coordinación con sus servicios correspondientes.
+- Directriz en `AGENTS.md` que establece que cada vista debe contar con un controlador dedicado cuando sea necesario.
+
+### Changed
+- `MainController` ahora agrega los nuevos controladores especializados en lugar de concentrar todas las operaciones en una sola clase.
+- Las vistas de inicio de sesión y pruebas se actualizaron para interactuar con los controladores especializados expuestos por `MainController`.
+
 ## [0.7.0] - 2024-05-31
 ### Added
 - Tablero inicial en la sección de pruebas con tabla moderna, acciones rápidas y botón para crear sesiones nuevas.

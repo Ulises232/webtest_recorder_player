@@ -86,7 +86,7 @@ def build_login_view(
 
     tb.Label(container, text="Ingrese sus credenciales", font=("Segoe UI", 12, "bold")).pack(anchor=W, pady=(0, 12))
 
-    cached_credentials = controller.load_cached_credentials() or {}
+    cached_credentials = controller.auth.load_cached_credentials() or {}
     cached_username = cached_credentials.get("username", "").strip()
     cached_password = cached_credentials.get("password", "")
 
@@ -234,7 +234,7 @@ def build_login_view(
             status_var.set("Capture usuario y contraseña para continuar.")
             return
 
-        auth_result = controller.authenticate_user(username, password)
+        auth_result = controller.auth.authenticate_user(username, password)
         status = auth_result.status
         if status == AuthenticationStatus.AUTHENTICATED:
             result["auth"] = auth_result
@@ -286,7 +286,7 @@ def build_login_view(
     dialog.protocol("WM_DELETE_WINDOW", cancel)
 
     try:
-        choices, error_message = controller.list_active_users()
+        choices, error_message = controller.auth.list_active_users()
     except Exception as exc:  # pragma: no cover - protege contra errores inesperados
         choices = []
         error_message = str(exc)

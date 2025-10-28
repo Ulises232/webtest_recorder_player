@@ -110,7 +110,7 @@ def build_pruebas_view(
         if not session_id:
             Messagebox.showinfo("Sesión", "Selecciona una sesión del tablero antes de guardar.")
             return
-        error_msg = controller.update_session_details(
+        error_msg = controller.sessions.update_session_details(
             session_id,
             base_var.get().strip(),
             url_var.get().strip(),
@@ -120,7 +120,7 @@ def build_pruebas_view(
         if error_msg:
             Messagebox.showerror("Sesión", error_msg)
             return
-        prev_base["val"] = controller.slugify_for_windows(base_var.get() or "reporte")
+        prev_base["val"] = controller.naming.slugify_for_windows(base_var.get() or "reporte")
         session["title"] = (base_var.get() or session.get("title", "")).strip() or session.get("title", "")
         session_saved["val"] = True
         status.set("💾 Sesión actualizada desde el editor.")
@@ -143,7 +143,7 @@ def build_pruebas_view(
     base_var = tb.StringVar(value="reporte"); tb.Entry(card1, textvariable=base_var).grid(row=0, column=1, sticky=EW, padx=(10,0))
     
     tb.Label(card1, text="URL inicial").grid(row=2, column=0, sticky=W, pady=(10,2))
-    urls = controller.load_history(controller.URL_HISTORY_CATEGORY, controller.DEFAULT_URL)
+    urls = controller.history.load_history(controller.URL_HISTORY_CATEGORY, controller.DEFAULT_URL)
     url_var = tb.StringVar(value=urls[0] if urls else controller.DEFAULT_URL)
     tb.Combobox(card1, textvariable=url_var, values=urls, width=56, bootstyle="light").grid(row=2, column=1, sticky=EW, pady=(10,2))
 
@@ -165,8 +165,8 @@ def build_pruebas_view(
     tb.Label(card2, text="Carpeta evidencias").grid(row=1, column=0, sticky=W, pady=(6,0))
     ev_var = tb.StringVar(); tb.Entry(card2, textvariable=ev_var).grid(row=1, column=1, sticky=EW, padx=(10,0) , pady=(2,2))
     
-    sessions_dir = controller.getSessionsDirectory()
-    evidence_dir = controller.getEvidenceDirectory()
+    sessions_dir = controller.sessions.getSessionsDirectory()
+    evidence_dir = controller.sessions.getEvidenceDirectory()
 
     style = tb.Style()
     style.configure(
@@ -234,7 +234,7 @@ def build_pruebas_view(
     def _get_current_username() -> str:
         """Return the username of the authenticated operator."""
 
-        return controller.get_authenticated_username().strip()
+        return controller.auth.get_authenticated_username().strip()
 
     def _prepare_new_session_form() -> None:
         """Reset the inputs before creating a new session."""
@@ -244,7 +244,7 @@ def build_pruebas_view(
         except Exception:
             pass
         default_url = controller.DEFAULT_URL
-        urls = controller.load_history(controller.URL_HISTORY_CATEGORY, default_url)
+        urls = controller.history.load_history(controller.URL_HISTORY_CATEGORY, default_url)
         try:
             url_var.set(urls[0] if urls else default_url)
         except Exception:
@@ -344,7 +344,7 @@ def build_pruebas_view(
                 child.destroy()
             except Exception:
                 pass
-        sessions, error = controller.list_sessions(limit=100)
+        sessions, error = controller.sessions.list_sessions(limit=100)
         if error:
             status.set(f"⚠️ {error}")
             return
@@ -499,7 +499,7 @@ def build_pruebas_view(
             return
         dashboard_edit_state["sessionId"] = None
         try:
-            controller.clear_active_session()
+            controller.sessions.clear_active_session()
         except Exception:
             pass
         try:
@@ -522,7 +522,7 @@ def build_pruebas_view(
         if _is_dashboard_editing():
             _clear_dashboard_edit_mode()
 
-        session_payload, evidences, error = controller.activate_session_for_dashboard_edit(session_obj.sessionId or 0)
+        session_payload, evidences, error = controller.sessions.activate_session_for_dashboard_edit(session_obj.sessionId or 0)
         if error:
             Messagebox.showerror("Sesión", error)
             return
@@ -539,7 +539,7 @@ def build_pruebas_view(
         finally:
             auto_paths_state["enabled"] = True
 
-        prev_base["val"] = controller.slugify_for_windows(base_var.get() or "reporte")
+        prev_base["val"] = controller.naming.slugify_for_windows(base_var.get() or "reporte")
         session["title"] = loaded_session.name or ""
         session["sessionId"] = loaded_session.sessionId
         _populate_session_from_evidences(evidences)
@@ -570,7 +570,7 @@ def build_pruebas_view(
             return
         if not Messagebox.askyesno("Sesión", f"¿Eliminar la sesión '{session_obj.name}'? Esta acción no se puede deshacer."):
             return
-        error = controller.delete_session(session_obj.sessionId or 0)
+        error = controller.sessions.delete_session(session_obj.sessionId or 0)
         if error:
             Messagebox.showerror("Sesión", error)
             return
@@ -594,7 +594,7 @@ def build_pruebas_view(
 
         if not auto_paths_state.get("enabled", True):
             return
-        base = controller.slugify_for_windows(base_var.get() or "reporte")
+        base = controller.naming.slugify_for_windows(base_var.get() or "reporte")
         final = f"{base}"
         doc_var.set(str(sessions_dir / f"{final}.docx"))
         ev_var.set(str(evidence_dir / final))
@@ -602,12 +602,12 @@ def build_pruebas_view(
     base_var.trace_add("write", refresh_paths)
     refresh_paths()
 
-    prev_base = {"val": controller.slugify_for_windows(base_var.get() or "reporte")}
+    prev_base = {"val": controller.naming.slugify_for_windows(base_var.get() or "reporte")}
 
     def _on_base_change(*_args: object) -> None:
         """Synchronize caches and optionally clear history when the base changes."""
 
-        new_base = controller.slugify_for_windows(base_var.get() or "reporte")
+        new_base = controller.naming.slugify_for_windows(base_var.get() or "reporte")
         old_base = prev_base["val"]
         if not old_base or new_base == old_base:
             return
@@ -653,7 +653,7 @@ def build_pruebas_view(
     def _refresh_timer_label() -> None:
         """Update the timer label based on the service value."""
     
-        timer_var.set(format_elapsed(controller.get_session_elapsed_seconds()))
+        timer_var.set(format_elapsed(controller.sessions.get_session_elapsed_seconds()))
     
     def _schedule_timer_tick() -> None:
         """Reschedule the timer update when the session is running."""
@@ -707,7 +707,7 @@ def build_pruebas_view(
     
         if not session_state["active"]:
             return
-        error = controller.update_active_session_outputs(doc_var.get(), ev_var.get())
+        error = controller.sessions.update_active_session_outputs(doc_var.get(), ev_var.get())
         if error:
             status.set(f"⚠️ {error}")
     
@@ -718,7 +718,7 @@ def build_pruebas_view(
         """Display the elapsed time in a dialog."""
     
         _refresh_timer_label()
-        Messagebox.showinfo("Sesión", f"Tiempo transcurrido: {format_elapsed(controller.get_session_elapsed_seconds())}")
+        Messagebox.showinfo("Sesión", f"Tiempo transcurrido: {format_elapsed(controller.sessions.get_session_elapsed_seconds())}")
     
     def start_evidence_session() -> None:
         """Start a new evidence session and reset the UI state."""
@@ -740,7 +740,7 @@ def build_pruebas_view(
             Messagebox.showwarning("Sesión", "Ya hay una sesión activa en curso.")
             return
 
-        base_name = controller.slugify_for_windows(base_var.get() or "reporte") or "reporte"
+        base_name = controller.naming.slugify_for_windows(base_var.get() or "reporte") or "reporte"
         session_title = (base_var.get() or "Incidencia").strip() or base_name
         session["title"] = session_title
     
@@ -753,7 +753,7 @@ def build_pruebas_view(
             Messagebox.showerror("Sesión", f"No fue posible preparar las carpetas de salida: {exc}")
             return
     
-        session_obj, error = controller.begin_evidence_session(
+        session_obj, error = controller.sessions.begin_evidence_session(
             session_title,
             (url_var.get() or controller.DEFAULT_URL).strip() or controller.DEFAULT_URL,
             str(doc_path),
@@ -784,7 +784,7 @@ def build_pruebas_view(
         if not _ensure_session_active(True):
             return
         if session_state["paused"]:
-            error = controller.resume_evidence_session()
+            error = controller.sessions.resume_evidence_session()
             if error:
                 Messagebox.showerror("Sesión", error)
                 return
@@ -794,7 +794,7 @@ def build_pruebas_view(
             _schedule_timer_tick()
             return
     
-        error = controller.pause_evidence_session()
+        error = controller.sessions.pause_evidence_session()
         if error:
             Messagebox.showerror("Sesión", error)
             return
@@ -816,14 +816,14 @@ def build_pruebas_view(
         if not Messagebox.askyesno("Sesión", "¿Deseas finalizar la sesión actual?"):
             return
     
-        session_obj, error = controller.finalize_evidence_session()
+        session_obj, error = controller.sessions.finalize_evidence_session()
         if error:
             Messagebox.showerror("Sesión", error)
             return
     
         session_state.update({"active": False, "paused": False, "timerJob": None})
         _cancel_timer()
-        final_elapsed = session_obj.durationSeconds if session_obj else controller.get_session_elapsed_seconds()
+        final_elapsed = session_obj.durationSeconds if session_obj else controller.sessions.get_session_elapsed_seconds()
         timer_var.set(format_elapsed(final_elapsed))
         status.set("✅ Sesión finalizada.")
         try:
@@ -880,7 +880,7 @@ def build_pruebas_view(
     
         evidence_id = step.get("id")
         if evidence_id:
-            error = controller.update_session_evidence(
+            error = controller.sessions.update_session_evidence(
                 int(evidence_id),
                 new_path,
                 step.get("desc", ""),
@@ -1018,7 +1018,7 @@ def build_pruebas_view(
         if meta_desc["consideraciones"]: step["consideraciones"] = meta_desc["consideraciones"]
         if meta_desc["observacion"]: step["observacion"] = meta_desc["observacion"]
         session["steps"].append(step)
-        evidence, error = controller.register_session_evidence(
+        evidence, error = controller.sessions.register_session_evidence(
             Path(step["shots"][0]),
             step.get("desc", ""),
             step.get("consideraciones", ""),
@@ -1078,7 +1078,7 @@ def build_pruebas_view(
         if meta_desc["consideraciones"]: step["consideraciones"] = meta_desc["consideraciones"]
         if meta_desc["observacion"]: step["observacion"] = meta_desc["observacion"]
         session["steps"].append(step)
-        evidence, error = controller.register_session_evidence(
+        evidence, error = controller.sessions.register_session_evidence(
             Path(step["shots"][0]),
             step.get("desc", ""),
             step.get("consideraciones", ""),
@@ -1115,13 +1115,13 @@ def build_pruebas_view(
         tb.Label(frm, text="URL de la página de Confluence", font=("Segoe UI", 11, "bold")).pack(anchor=W, pady=(0,8))
     
         tb.Label(frm, text="ENTORNO", font=("Segoe UI", 11, "bold")).pack(anchor=W, pady=(10,2))
-        hist = controller.load_history(controller.CONFLUENCE_HISTORY_CATEGORY, controller.CONF_DEFAULT)
+        hist = controller.history.load_history(controller.CONFLUENCE_HISTORY_CATEGORY, controller.CONF_DEFAULT)
         urlv = tb.StringVar(value=hist[0] if hist else "")
         cmb = tb.Combobox(frm, textvariable=urlv, values=hist, width=70, bootstyle="light"); cmb.pack(fill=X)
         cmb.icursor("end")
     
         tb.Label(frm, text="ESPACIO", font=("Segoe UI", 11, "bold")).pack(anchor=W, pady=(10,2))
-        histspaces = controller.load_history(controller.CONFLUENCE_SPACES_CATEGORY, "")
+        histspaces = controller.history.load_history(controller.CONFLUENCE_SPACES_CATEGORY, "")
         urlvspaces = tb.StringVar(value=histspaces[0] if histspaces else "")
         cmbspaces = tb.Combobox(frm, textvariable=urlvspaces, values=histspaces, width=70, bootstyle="light"); cmbspaces.pack(fill=X)
         cmbspaces.icursor("end")
@@ -1132,7 +1132,7 @@ def build_pruebas_view(
             """Auto-generated docstring for `ok`."""
             space_value = urlvspaces.get().strip()
             if space_value:
-                controller.register_history_value(controller.CONFLUENCE_SPACES_CATEGORY, space_value)
+                controller.history.register_history_value(controller.CONFLUENCE_SPACES_CATEGORY, space_value)
             res["url"] = ((urlv.get() + space_value) or "").strip(); win.destroy()
         def cancel():
             """Auto-generated docstring for `cancel`."""
@@ -1151,10 +1151,10 @@ def build_pruebas_view(
     
         url_c = modal_confluence_url()
         if not url_c: return
-        controller.register_history_value(controller.CONFLUENCE_HISTORY_CATEGORY, url_c)
+        controller.history.register_history_value(controller.CONFLUENCE_HISTORY_CATEGORY, url_c)
     
         status.set("⏳ Preparando contenido y abriendo Confluence...")
-        controller.open_chrome_with_profile(url_c, "Default")
+        controller.browser.open_chrome_with_profile(url_c, "Default")
         log_path = sessions_dir / f"{session.get('title')}_confluence.log"
     
         Messagebox.showinfo(
@@ -1204,15 +1204,15 @@ def build_pruebas_view(
             session_state.update({"active": False, "paused": False, "timerJob": None})
             _cancel_timer()
             timer_var.set(format_elapsed(0))
-        base = controller.slugify_for_windows(base_var.get() or "reporte")
+        base = controller.naming.slugify_for_windows(base_var.get() or "reporte")
         _clear_evidence_for(base, also_clear_session=True)
         status.set("🧹 Caché limpiado en la GUI. Las evidencias en disco se mantienen intactas.")
     def abrir_nav():
         """Auto-generated docstring for `abrir_nav`."""
         url = (url_var.get() or controller.DEFAULT_URL).strip() or controller.DEFAULT_URL
-        ok, msg = controller.open_chrome_with_profile(url, "Default")
+        ok, msg = controller.browser.open_chrome_with_profile(url, "Default")
         if ok:
-            controller.register_history_value(controller.URL_HISTORY_CATEGORY, url)
+            controller.history.register_history_value(controller.URL_HISTORY_CATEGORY, url)
             status.set("✅ Chrome abierto (perfil Default)")
         else:
             Messagebox.showerror("Navegador",f"No se pudo abrir Chrome: {msg}")
