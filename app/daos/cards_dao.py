@@ -406,6 +406,7 @@ class CardAIOutputDAO:
         except DatabaseConnectorError as exc:  # pragma: no cover - depende del entorno
             raise CardAIOutputDAOError(str(exc)) from exc
 
+        fk_ready = False
         try:
             cursor = connection.cursor()
             cursor.execute(
@@ -433,39 +434,57 @@ class CardAIOutputDAO:
             )
             cursor.execute(
                 """
-                IF NOT EXISTS (
-                    SELECT 1 FROM sys.foreign_keys WHERE name = 'fk_cards_ai_outputs_card'
-                )
+                IF OBJECT_ID('dbo.cards', 'U') IS NOT NULL
                 BEGIN
-                    ALTER TABLE dbo.cards_ai_outputs
-                        ADD CONSTRAINT fk_cards_ai_outputs_card
-                        FOREIGN KEY (card_id) REFERENCES dbo.cards(id);
+                    IF NOT EXISTS (
+                        SELECT 1 FROM sys.foreign_keys WHERE name = 'fk_cards_ai_outputs_card'
+                    )
+                    BEGIN
+                        ALTER TABLE dbo.cards_ai_outputs
+                            ADD CONSTRAINT fk_cards_ai_outputs_card
+                            FOREIGN KEY (card_id) REFERENCES dbo.cards(id);
+                    END
                 END
                 """
             )
             cursor.execute(
                 """
-                IF NOT EXISTS (
-                    SELECT 1 FROM sys.foreign_keys WHERE name = 'fk_cards_ai_outputs_input'
-                )
+                IF OBJECT_ID('dbo.cards_ai_inputs', 'U') IS NOT NULL
                 BEGIN
-                    ALTER TABLE dbo.cards_ai_outputs
-                        ADD CONSTRAINT fk_cards_ai_outputs_input
-                        FOREIGN KEY (input_id) REFERENCES dbo.cards_ai_inputs(input_id);
+                    IF NOT EXISTS (
+                        SELECT 1 FROM sys.foreign_keys WHERE name = 'fk_cards_ai_outputs_input'
+                    )
+                    BEGIN
+                        ALTER TABLE dbo.cards_ai_outputs
+                            ADD CONSTRAINT fk_cards_ai_outputs_input
+                            FOREIGN KEY (input_id) REFERENCES dbo.cards_ai_inputs(input_id);
+                    END
                 END
                 """
             )
+            cursor.execute(
+                """
+                SELECT COUNT(1)
+                FROM sys.foreign_keys
+                WHERE name = 'fk_cards_ai_outputs_input'
+                """
+            )
+            row = cursor.fetchone()
+            fk_ready = bool(row and row[0] and int(row[0]) > 0)
             connection.commit()
         except Exception as exc:  # pragma: no cover - depende del driver
             try:
                 connection.rollback()
             except Exception:
                 pass
-            connection.close()
             raise CardAIOutputDAOError("No fue posible preparar la tabla de resultados de IA.") from exc
+        finally:
+            try:
+                connection.close()
+            except Exception:
+                pass
 
-        connection.close()
-        self._schema_ready = True
+        self._schema_ready = fk_ready
 
     def insertOutput(self, record: CardAIOutputRecord) -> int:
         """Persist a new LLM response and return its identifier."""

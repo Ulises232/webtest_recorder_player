@@ -13,6 +13,7 @@
 
 ### Fixed
 - Corrección en los callbacks asíncronos de la vista **Generar DDE/HU** para mantener el mensaje de error disponible al mostrar cuadros de diálogo y evitar excepciones `NameError`.
+- Ajuste en el DAO de resultados de IA para que la tabla `cards_ai_outputs` se prepare aun cuando `cards_ai_inputs` no exista todavía, evitando el error al abrir el historial desde una tarjeta sin ejecuciones previas.
 
 ## [0.7.1] - 2024-06-01
 ### Added
