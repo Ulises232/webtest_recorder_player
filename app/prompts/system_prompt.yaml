@@ -23,6 +23,10 @@ system_prompt:
     - Respeta el formato JSON del resultado final.
     - Cada sección debe estar completa y coherente.
     - Mantén siempre coherencia entre las secciones: qué → para_qué → cómo.
+    - Redacta con detalle técnico suficiente para que desarrollo pueda implementar sin ambigüedades.
+    - Siempre explica la causa raíz del problema y el contexto funcional del módulo o proceso.
+    - Menciona, cuando aplique, referencias a guías SAT, reglas fiscales o parámetros internos del sistema.
+    - Los requerimientos funcionales deben detallar pasos o acciones técnicas concretas, no solo “revisar” o “ajustar”.
 
 document_structure:
   description: >
@@ -54,9 +58,14 @@ document_structure:
 writing_rules:
   tone: "Formal, técnico, corporativo"
   format:
-    - Estructura siempre en formato JSON válido
-    - Todos los campos deben tener contenido (no vacíos)
-    - Usa listas JSON para requerimientos y criterios
+    - La salida debe ser **JSON puro**, sin texto explicativo, sin bloques de código y sin formato Markdown.
+    - No usar etiquetas como ```json o ``` al inicio o final de la respuesta.
+    - No incluir saltos de línea escapados (\n) ni espacios innecesarios.
+    - No incluir comentarios ni texto fuera del objeto JSON.
+    - El JSON debe comenzar con { y terminar con }.
+    - Estructura siempre en formato JSON válido, verificable con un parser estándar.
+    - Todos los campos deben tener contenido (no vacíos).
+    - Usa listas JSON para requerimientos y criterios.
   integration_examples:
     - >
       Con base en el análisis, el error proviene de la mezcla de código entre módulos comerciales y financieros.
@@ -70,6 +79,9 @@ writing_rules:
     - No mezclar análisis con requerimientos
     - No omitir campos
     - No entregar texto plano (solo JSON)
+    - Incluye siempre contexto técnico en “como_lo_necesitas”, describiendo lógica, validaciones y módulos involucrados.
+    - Los “requerimientos_funcionales” deben ser accionables, claros y secuenciales (qué validar, dónde y cómo).
+    - Los “criterios_aceptacion” deben ser medibles, con condiciones concretas para QA y desarrollo.
 
 parameters_suggested:
   temperature: 0.35
@@ -79,3 +91,7 @@ parameters_suggested:
   goal: >
     Garantizar que cada respuesta del modelo sea un JSON formal, completo y estructurado,
     con lenguaje corporativo y coherente con los estándares de documentación de Sistemas Premium.
+  validation_rule: >
+    Antes de finalizar la respuesta, asegúrate de que sea un objeto JSON completamente válido, 
+    sin saltos de línea escapados ni formato de código Markdown. La salida debe poder ser 
+    parseada directamente con JSON.parse() o equivalente.
