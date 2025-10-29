@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from app.config.ai_config import AIConfiguration
+from app.daos.card_ai_output_dao import CardAIOutputDAOError
 from app.dtos.card_ai_dto import CardAIRequestDTO, CardDTO, CardFiltersDTO
 from app.services.card_ai_service import CardAIService, CardAIServiceError
 
@@ -98,6 +99,8 @@ class FakeOutputDAO:
     def __init__(self) -> None:
         self.created: List[Dict[str, object]] = []
         self._next_id = 1
+        self.deleted: List[int] = []
+        self.fail_on_delete = False
 
     def create_output(
         self,
@@ -124,6 +127,13 @@ class FakeOutputDAO:
 
     def list_by_card(self, card_id: int, limit: int = 50):  # pragma: no cover - no se usa en estas pruebas
         return []
+
+    def delete_output(self, output_id: int) -> None:
+        """Simulate the deletion of an output entry."""
+
+        if self.fail_on_delete:
+            raise CardAIOutputDAOError("boom")
+        self.deleted.append(output_id)
 
 
 class FakeContextService:
@@ -197,6 +207,38 @@ def test_calculate_completeness_counts_non_empty_fields() -> None:
         infoAdicional="Tres",
     )
     assert CardAIService.calculate_completeness(payload) == 60
+
+
+def test_delete_output_delegates_to_dao() -> None:
+    """Deleting history entries should invoke the DAO helper."""
+
+    fake_output = FakeOutputDAO()
+    service = CardAIService(
+        FakeCardDAO(),
+        FakeInputDAO(),
+        fake_output,
+        http_post=successful_http_post,
+    )
+
+    service.delete_output(42)
+
+    assert fake_output.deleted == [42]
+
+
+def test_delete_output_wraps_dao_errors() -> None:
+    """DAO failures during deletion must be surfaced as service errors."""
+
+    fake_output = FakeOutputDAO()
+    fake_output.fail_on_delete = True
+    service = CardAIService(
+        FakeCardDAO(),
+        FakeInputDAO(),
+        fake_output,
+        http_post=successful_http_post,
+    )
+
+    with pytest.raises(CardAIServiceError):
+        service.delete_output(99)
 
 
 def test_save_draft_persists_input_and_marks_as_draft() -> None:

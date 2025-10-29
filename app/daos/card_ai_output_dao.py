@@ -217,3 +217,33 @@ class CardAIOutputDAO:
             )
         return documents
 
+    def delete_output(self, output_id: int) -> None:
+        """Remove a stored output identified by its primary key."""
+
+        self._ensure_schema()
+        try:
+            connection = self._connection_factory()
+        except DatabaseConnectorError as exc:  # pragma: no cover - depende del entorno
+            raise CardAIOutputDAOError(str(exc)) from exc
+
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                "DELETE FROM dbo.cards_ai_outputs WHERE output_id = %s",
+                (output_id,),
+            )
+            affected = cursor.rowcount or 0
+            connection.commit()
+        except Exception as exc:  # pragma: no cover - depende del driver
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            connection.close()
+            raise CardAIOutputDAOError("No fue posible eliminar el resultado solicitado.") from exc
+
+        connection.close()
+
+        if affected == 0:
+            raise CardAIOutputDAOError("El resultado solicitado no existe o ya fue eliminado.")
+

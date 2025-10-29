@@ -80,3 +80,11 @@ class CardAIController:
         except CardAIServiceError as exc:
             raise RuntimeError(str(exc)) from exc
 
+    def delete_output(self, output_id: int) -> None:
+        """Remove a stored output entry from the history."""
+
+        try:
+            self._service.delete_output(output_id)
+        except CardAIServiceError as exc:
+            raise RuntimeError(str(exc)) from exc
+

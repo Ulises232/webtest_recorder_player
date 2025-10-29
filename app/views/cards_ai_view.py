@@ -263,22 +263,163 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
     detail.pack(fill=BOTH, expand=YES, padx=12, pady=(0, 12))
 
     entries_map: Dict[str, CardAIHistoryEntryDTO] = {}
+    managed_buttons: List[tk.Widget] = []
+
+    def get_selected_key() -> Optional[str]:
+        """Return the identifier for the currently selected row."""
+
+        selection = tree.selection()
+        if not selection:
+            return None
+        return selection[0]
+
+    def get_selected_entry() -> Optional[CardAIHistoryEntryDTO]:
+        """Return the DTO attached to the current selection."""
+
+        key = get_selected_key()
+        if not key:
+            return None
+        return entries_map.get(key)
+
+    def set_buttons_state() -> None:
+        """Enable or disable the history actions according to the selection."""
+
+        state = tk.NORMAL if get_selected_entry() else tk.DISABLED
+        for button in managed_buttons:
+            if button.winfo_exists():
+                button.configure(state=state)
 
     def on_select(event: tk.Event | None) -> None:
         """Render the JSON content for the selected history entry."""
 
-        selection = tree.selection()
-        if not selection:
-            return
-        item_id = selection[0]
-        entry = entries_map.get(item_id)
-        if not entry:
-            return
+        entry = get_selected_entry()
         detail.configure(state="normal")
         detail.delete("1.0", "end")
+        if not entry:
+            detail.configure(state="disabled")
+            set_buttons_state()
+            return
         pretty = json.dumps(entry.output.content, ensure_ascii=False, indent=2)
         detail.insert("1.0", pretty)
         detail.configure(state="disabled")
+        set_buttons_state()
+
+    def export_selected_json() -> None:
+        """Export the selected history entry using the JSON helper."""
+
+        entry = get_selected_entry()
+        if not entry:
+            return
+        _export_json(entry.output.content, win)
+
+    def export_selected_markdown() -> None:
+        """Export the selected history entry to Markdown format."""
+
+        entry = get_selected_entry()
+        if not entry:
+            return
+        _export_markdown(entry.output.content, win)
+
+    def export_selected_docx() -> None:
+        """Export the selected history entry to DOCX format."""
+
+        entry = get_selected_entry()
+        if not entry:
+            return
+        _export_docx(entry.output.content, win)
+
+    def export_selected_html() -> None:
+        """Export the selected history entry to HTML format."""
+
+        entry = get_selected_entry()
+        if not entry:
+            return
+        _export_html(entry.output.content, win)
+
+    def delete_selected_entry() -> None:
+        """Delete the selected history entry after confirmation."""
+
+        key = get_selected_key()
+        entry = get_selected_entry()
+        if not key or not entry:
+            return
+        if not messagebox.askyesno(
+            "Eliminar resultado",
+            "¿Deseas eliminar el resultado seleccionado del historial?",
+        ):
+            return
+        try:
+            controller.delete_output(entry.output.outputId)
+        except RuntimeError as exc:
+            messagebox.showerror("Error", str(exc))
+            return
+        tree.delete(key)
+        entries_map.pop(key, None)
+        detail.configure(state="normal")
+        detail.delete("1.0", "end")
+        detail.configure(state="disabled")
+        messagebox.showinfo("Historial", "El resultado se eliminó correctamente.")
+        remaining = tree.get_children("")
+        if remaining:
+            tree.selection_set(remaining[0])
+            on_select(None)
+        else:
+            set_buttons_state()
+
+    actions = tb.Frame(win, padding=(12, 0, 12, 12))
+    actions.pack(fill=X)
+
+    export_json_button = tb.Button(
+        actions,
+        text="Exportar JSON",
+        bootstyle=SECONDARY,
+        command=export_selected_json,
+        state=tk.DISABLED,
+    )
+    export_json_button.pack(side=LEFT)
+    managed_buttons.append(export_json_button)
+
+    export_md_button = tb.Button(
+        actions,
+        text="Exportar Markdown",
+        bootstyle=SECONDARY,
+        command=export_selected_markdown,
+        state=tk.DISABLED,
+    )
+    export_md_button.pack(side=LEFT, padx=6)
+    managed_buttons.append(export_md_button)
+
+    export_docx_button = tb.Button(
+        actions,
+        text="Exportar DOCX",
+        bootstyle=SECONDARY,
+        command=export_selected_docx,
+        state=tk.DISABLED,
+    )
+    export_docx_button.pack(side=LEFT, padx=6)
+    managed_buttons.append(export_docx_button)
+
+    export_html_button = tb.Button(
+        actions,
+        text="Exportar HTML",
+        bootstyle=SECONDARY,
+        command=export_selected_html,
+        state=tk.DISABLED,
+    )
+    export_html_button.pack(side=LEFT, padx=6)
+    managed_buttons.append(export_html_button)
+
+    delete_button = tb.Button(
+        actions,
+        text="Eliminar",
+        bootstyle=DANGER,
+        command=delete_selected_entry,
+        state=tk.DISABLED,
+    )
+    delete_button.pack(side=RIGHT)
+    managed_buttons.append(delete_button)
+
+    set_buttons_state()
 
     for idx, entry in enumerate(history, start=1):
         completeness = entry.input.completenessPct if entry.input else 0
@@ -692,6 +833,15 @@ def build_cards_ai_view(
     actions_frame.pack(fill=X)
     status_label = tb.Label(actions_frame, text="Selecciona una tarjeta para comenzar.", bootstyle=SECONDARY)
     status_label.pack(side=LEFT)
+    history_button = tb.Button(
+        actions_frame,
+        text="Historial",
+        bootstyle=INFO,
+        state=tk.DISABLED,
+        command=lambda: _show_history(root, controller, selected_card[0].cardId)
+        if selected_card
+        else None,
+    )
     generate_button = tb.Button(
         actions_frame,
         text="Generar DDE/HU",
@@ -700,6 +850,7 @@ def build_cards_ai_view(
         command=lambda: _open_capture_form(root, controller, selected_card[0]) if selected_card else None,
     )
     generate_button.pack(side=RIGHT)
+    history_button.pack(side=RIGHT, padx=(0, 6))
 
     selected_card: List[CardDTO] = []
     current_cards: List[CardDTO] = []
@@ -734,6 +885,7 @@ def build_cards_ai_view(
         current_cards[:] = cards
         selected_card.clear()
         generate_button.configure(state=tk.DISABLED)
+        history_button.configure(state=tk.DISABLED)
         tree.delete(*tree.get_children(""))
         for card in cards:
             tree.insert(
@@ -751,7 +903,7 @@ def build_cards_ai_view(
         status_label.configure(text=f"{len(cards)} tarjeta(s) encontradas.")
 
     def _on_select(event: tk.Event) -> None:
-        """Enable the generate button when a card is selected."""
+        """Enable the action buttons when a card is selected."""
 
         selection = tree.selection()
         if not selection:
@@ -763,7 +915,9 @@ def build_cards_ai_view(
             if card.cardId == card_id:
                 selected_card[:] = [card]
                 break
-        generate_button.configure(state=tk.NORMAL if selected_card else tk.DISABLED)
+        state = tk.NORMAL if selected_card else tk.DISABLED
+        generate_button.configure(state=state)
+        history_button.configure(state=state)
 
     tree.bind("<<TreeviewSelect>>", _on_select)
 
