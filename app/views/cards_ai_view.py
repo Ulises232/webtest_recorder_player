@@ -421,7 +421,11 @@ def _open_capture_form(
             try:
                 controller.save_draft(payload)
             except RuntimeError as exc:
-                win.after(0, lambda: messagebox.showerror("Error", str(exc)))
+                error_message = str(exc)
+                win.after(
+                    0,
+                    lambda message=error_message: messagebox.showerror("Error", message),
+                )
                 return
             win.after(0, lambda: messagebox.showinfo("Guardado", "Se guardó el borrador correctamente."))
 
@@ -451,7 +455,11 @@ def _open_capture_form(
             try:
                 result = controller.generate_document(payload)
             except RuntimeError as exc:
-                win.after(0, lambda: messagebox.showerror("Error", str(exc)))
+                error_message = str(exc)
+                win.after(
+                    0,
+                    lambda message=error_message: messagebox.showerror("Error", message),
+                )
                 return
             win.after(0, lambda: (win.destroy(), _show_generation_result(root, controller, card, result)))
 
