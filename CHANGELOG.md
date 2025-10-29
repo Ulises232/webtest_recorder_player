@@ -9,7 +9,7 @@
 - `CardAIService` ahora consulta el contexto recuperado antes de construir el prompt y almacena los títulos utilizados en `usados_como_contexto`.
 - `MainController` inicializa el índice semántico durante el arranque y lo inyecta en el servicio de tarjetas para disponer del contexto histórico.
 - Se elimina la dependencia directa de `pyodbc` porque la conexión a SQL Server ya está cubierta por los conectores existentes.
-- Se ajusta la versión de `numpy` a la serie 1.26.x para mantener la compatibilidad con `chromadb` y evitar conflictos al instalar dependencias.
+- Se actualiza `chromadb` a la versión 0.5.18 y `numpy` a la serie 2.1.x para disponer de ruedas compatibles con Python 3.13 y evitar compilaciones manuales durante la instalación.
 
 ## [0.8.2] - 2024-06-04
 ### Added
