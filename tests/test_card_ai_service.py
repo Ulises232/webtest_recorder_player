@@ -9,8 +9,13 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+from app.config.ai_config import AIConfiguration
 from app.dtos.card_ai_dto import CardAIRequestDTO, CardDTO, CardFiltersDTO
 from app.services.card_ai_service import CardAIService, CardAIServiceError
+
+
+PROMPTS_DIR = Path(__file__).resolve().parents[1] / "app" / "prompts"
+DEFAULT_SYSTEM_PROMPT = (PROMPTS_DIR / "system_prompt.yaml").read_text(encoding="utf-8").strip()
 
 
 class FakeCardDAO:
@@ -163,7 +168,12 @@ def failing_http_post(*_args, **_kwargs) -> FakeResponse:
 def test_calculate_completeness_counts_non_empty_fields() -> None:
     """The completeness helper should consider the number of filled fields."""
 
-    service = CardAIService(FakeCardDAO(), FakeInputDAO(), FakeOutputDAO(), http_post=successful_http_post)
+    service = CardAIService(
+        FakeCardDAO(),
+        FakeInputDAO(),
+        FakeOutputDAO(),
+        http_post=successful_http_post,
+    )
     payload = CardAIRequestDTO(
         cardId=1,
         tipo="INCIDENCIA",
@@ -180,7 +190,12 @@ def test_save_draft_persists_input_and_marks_as_draft() -> None:
     """Drafts should be flagged without contacting the LLM."""
 
     fake_input = FakeInputDAO()
-    service = CardAIService(FakeCardDAO(), fake_input, FakeOutputDAO(), http_post=successful_http_post)
+    service = CardAIService(
+        FakeCardDAO(),
+        fake_input,
+        FakeOutputDAO(),
+        http_post=successful_http_post,
+    )
     payload = CardAIRequestDTO(
         cardId=1,
         tipo="INCIDENCIA",
@@ -200,7 +215,12 @@ def test_generate_document_calls_llm_and_stores_output() -> None:
 
     fake_input = FakeInputDAO()
     fake_output = FakeOutputDAO()
-    service = CardAIService(FakeCardDAO(), fake_input, fake_output, http_post=successful_http_post)
+    service = CardAIService(
+        FakeCardDAO(),
+        fake_input,
+        fake_output,
+        http_post=successful_http_post,
+    )
     payload = CardAIRequestDTO(
         cardId=1,
         tipo="INCIDENCIA",
@@ -219,7 +239,12 @@ def test_generate_document_calls_llm_and_stores_output() -> None:
 def test_generate_document_handles_llm_errors() -> None:
     """Non-200 responses from the LLM should raise a service error."""
 
-    service = CardAIService(FakeCardDAO(), FakeInputDAO(), FakeOutputDAO(), http_post=failing_http_post)
+    service = CardAIService(
+        FakeCardDAO(),
+        FakeInputDAO(),
+        FakeOutputDAO(),
+        http_post=failing_http_post,
+    )
     payload = CardAIRequestDTO(
         cardId=1,
         tipo="INCIDENCIA",
@@ -231,3 +256,107 @@ def test_generate_document_handles_llm_errors() -> None:
     )
     with pytest.raises(CardAIServiceError):
         service.generate_document(payload)
+
+
+def test_generate_document_sends_system_prompt_first() -> None:
+    """The LLM request must prepend the corporate system prompt before user content."""
+
+    captured: Dict[str, object] = {}
+
+    def capturing_http_post(*_args, **kwargs) -> FakeResponse:
+        captured["payload"] = kwargs.get("json")
+        return successful_http_post()
+
+    service = CardAIService(
+        FakeCardDAO(),
+        FakeInputDAO(),
+        FakeOutputDAO(),
+        http_post=capturing_http_post,
+    )
+    payload = CardAIRequestDTO(
+        cardId=1,
+        tipo="INCIDENCIA",
+        descripcion="Descripción",
+        analisis="",
+        recomendaciones="",
+        cosasPrevenir="",
+        infoAdicional="",
+    )
+
+    service.generate_document(payload)
+
+    payload_sent = captured.get("payload")
+    assert isinstance(payload_sent, dict)
+    messages = payload_sent["messages"]  # type: ignore[index]
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"] == DEFAULT_SYSTEM_PROMPT
+    assert messages[1]["role"] == "user"
+    assert "Genera un documento formal" in messages[1]["content"]
+
+
+def test_generate_document_uses_custom_system_prompt_file(tmp_path) -> None:
+    """The loader must read the prompt content from the configured file path."""
+
+    prompt_file = tmp_path / "custom_prompt.yaml"
+    prompt_file.write_text("Contenido personalizado", encoding="utf-8")
+
+    captured: Dict[str, object] = {}
+
+    def capturing_http_post(*_args, **kwargs) -> FakeResponse:
+        captured["payload"] = kwargs.get("json")
+        return successful_http_post()
+
+    config = AIConfiguration({"LM_SYSTEM_PROMPT_PATH": str(prompt_file)})
+    service = CardAIService(
+        FakeCardDAO(),
+        FakeInputDAO(),
+        FakeOutputDAO(),
+        configuration=config,
+        http_post=capturing_http_post,
+    )
+
+    payload = CardAIRequestDTO(
+        cardId=1,
+        tipo="INCIDENCIA",
+        descripcion="Descripción",
+        analisis="",
+        recomendaciones="",
+        cosasPrevenir="",
+        infoAdicional="",
+    )
+
+    service.generate_document(payload)
+
+    payload_sent = captured.get("payload")
+    assert isinstance(payload_sent, dict)
+    messages = payload_sent["messages"]  # type: ignore[index]
+    assert messages[0]["content"] == "Contenido personalizado"
+
+
+def test_generate_document_fails_when_system_prompt_missing(tmp_path) -> None:
+    """An informative error should be raised if the system prompt file is unavailable."""
+
+    missing_path = tmp_path / "missing_prompt.yaml"
+    config = AIConfiguration({"LM_SYSTEM_PROMPT_PATH": str(missing_path)})
+    service = CardAIService(
+        FakeCardDAO(),
+        FakeInputDAO(),
+        FakeOutputDAO(),
+        configuration=config,
+        http_post=successful_http_post,
+    )
+
+    payload = CardAIRequestDTO(
+        cardId=1,
+        tipo="INCIDENCIA",
+        descripcion="Descripción",
+        analisis="",
+        recomendaciones="",
+        cosasPrevenir="",
+        infoAdicional="",
+    )
+
+    with pytest.raises(CardAIServiceError) as excinfo:
+        service.generate_document(payload)
+
+    assert "prompt de sistema" in str(excinfo.value)

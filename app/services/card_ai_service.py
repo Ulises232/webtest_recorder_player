@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 try:  # pragma: no cover - fallback for environments without requests installed
@@ -55,6 +56,7 @@ class CardAIService:
         output_dao: CardAIOutputDAO,
         configuration: Optional[AIConfiguration] = None,
         http_post: Optional[Callable[..., requests.Response]] = None,
+        system_prompt_loader: Optional[Callable[[], str]] = None,
     ) -> None:
         """Store dependencies used by the service."""
 
@@ -63,6 +65,9 @@ class CardAIService:
         self._output_dao = output_dao
         self._config = configuration or AIConfiguration()
         self._http_post = http_post or requests.post
+        self._system_prompt_loader: Callable[[], str] = (
+            system_prompt_loader or self._load_system_prompt_from_file
+        )
 
     @staticmethod
     def calculate_completeness(payload: CardAIRequestDTO) -> int:
@@ -143,32 +148,32 @@ class CardAIService:
             "info_adicional": payload.infoAdicional or "",
         }
         return (
-            "Eres un redactor técnico y analista de requerimientos del área de TI en Sistemas Premium.\n"
-            "Genera un documento formal en formato DDE o HU según el tipo indicado.\n\n"
-            "Datos:\n"
-            f"- Título: {titulo_card}\n"
+            "Genera un documento formal alineado con el estándar corporativo de Sistemas Premium.\n\n"
+            "Datos de entrada:\n"
+            f"- Tipo requerido: {tipo}\n"
+            f"- Título de la tarjeta: {titulo_card}\n"
             f"- Descripción: {data['descripcion']}\n"
             f"- Análisis: {data['analisis']}\n"
             f"- Recomendaciones: {data['recomendaciones']}\n"
-            f"- Cosas a prevenir: {data['cosas_prevenir']}\n"
+            f"- Riesgos o puntos a prevenir: {data['cosas_prevenir']}\n"
             f"- Información adicional: {data['info_adicional']}\n\n"
-            "Usa este esquema JSON:\n"
+            "Estructura estricta del JSON de salida:\n"
             "{\n"
             "  \"titulo\": string,\n"
             "  \"fecha\": string,\n"
             "  \"hora_inicio\": string,\n"
             "  \"hora_fin\": string,\n"
             "  \"lugar\": \"Sistemas Premium\",\n"
-            f"  \"encabezado_tipo\": \"{tipo}\",\n"
+            f"  \"tipo\": \"{tipo}\",\n"
             "  \"descripcion\": string,\n"
             "  \"que_necesitas\": string,\n"
-            "  \"para_que\": string,\n"
-            "  \"como_necesitas\": string,\n"
+            "  \"para_que_lo_necesitas\": string,\n"
+            "  \"como_lo_necesitas\": string,\n"
             "  \"requerimientos_funcionales\": string[],\n"
             "  \"requerimientos_especiales\": string[],\n"
             "  \"criterios_aceptacion\": string[]\n"
             "}\n"
-            "Devuelve **solo el JSON**, sin texto adicional."
+            "Entrega únicamente el JSON final, sin comentarios ni texto adicional."
         )
 
     def _call_llm(self, prompt: str) -> Dict[str, object]:
@@ -181,9 +186,21 @@ class CardAIService:
         else:
             headers["Authorization"] = "Bearer local"
 
+        try:
+            system_prompt = self._system_prompt_loader()
+        except CardAIServiceError:
+            raise
+        except Exception as exc:  # pragma: no cover - fallback ante errores inesperados
+            raise CardAIServiceError(
+                "No fue posible cargar el prompt de sistema solicitado."
+            ) from exc
+
         payload = {
             "model": self._config.get_model_name(),
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ],
             "temperature": self._config.get_temperature(),
             "top_p": self._config.get_top_p(),
             "max_tokens": self._config.get_max_tokens(),
@@ -282,4 +299,29 @@ class CardAIService:
             forceSaveInputs=True,
         )
         return self.generate_document(payload)
+
+    def _load_system_prompt_from_file(self) -> str:
+        """Read the corporate system prompt from the configured file path."""
+
+        prompt_path = Path(self._config.get_system_prompt_path()).expanduser()
+        if not prompt_path.is_absolute():
+            prompt_path = Path.cwd() / prompt_path
+
+        try:
+            content = prompt_path.read_text(encoding="utf-8").strip()
+        except FileNotFoundError as exc:
+            raise CardAIServiceError(
+                f"No fue posible leer el prompt de sistema en '{prompt_path}'."
+            ) from exc
+        except OSError as exc:
+            raise CardAIServiceError(
+                f"Ocurrió un error al leer el prompt de sistema en '{prompt_path}'."
+            ) from exc
+
+        if not content:
+            raise CardAIServiceError(
+                f"El archivo de prompt de sistema '{prompt_path}' está vacío."
+            )
+
+        return content
 

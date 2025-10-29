@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1] - 2024-06-03
+### Changed
+- La solicitud al asistente de IA ahora antepone un mensaje de sistema con las directrices corporativas y actualiza el prompt del usuario para reflejar el nuevo esquema JSON requerido.
+- El mensaje de sistema se carga desde `app/prompts/system_prompt.yaml`, lo que permite ajustarlo sin modificar el código fuente.
+
+### Added
+- Prueba unitaria que valida que el servicio envía primero el mensaje de sistema antes del contenido del usuario al consumir el modelo.
+
 ## [0.8.0] - 2024-06-02
 ### Added
 - Vista dedicada para generar documentos DDE/HU asistidos por IA con filtros, buscador en tiempo real y barra de progreso de completitud.

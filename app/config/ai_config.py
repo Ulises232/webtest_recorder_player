@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Mapping, MutableMapping, Optional
 
 
@@ -16,6 +17,9 @@ class AIConfiguration:
     DEFAULT_TEMPERATURE: float = 0.35
     DEFAULT_TOP_P: float = 0.9
     DEFAULT_MAX_TOKENS: int = 3000
+    DEFAULT_SYSTEM_PROMPT_PATH: str = str(
+        Path(__file__).resolve().parents[1] / "prompts" / "system_prompt.yaml"
+    )
 
     def __init__(self, environ: Optional[Mapping[str, str]] = None) -> None:
         """Persist the environment mapping used to read configuration values."""
@@ -72,4 +76,10 @@ class AIConfiguration:
             return int(raw)
         except ValueError:
             return self.DEFAULT_MAX_TOKENS
+
+    def get_system_prompt_path(self) -> str:
+        """Expose the filesystem path containing the corporate system prompt."""
+
+        path = self._environ.get("LM_SYSTEM_PROMPT_PATH", "").strip()
+        return path or self.DEFAULT_SYSTEM_PROMPT_PATH
 
