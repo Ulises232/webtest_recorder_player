@@ -123,6 +123,14 @@ class CardAIService:
             history.append(CardAIHistoryEntryDTO(output=output, input=input_dto))
         return history
 
+    def delete_output(self, output_id: int) -> None:
+        """Remove a stored output document from the database."""
+
+        try:
+            self._output_dao.delete_output(output_id)
+        except CardAIOutputDAOError as exc:
+            raise CardAIServiceError(str(exc)) from exc
+
     def save_draft(self, payload: CardAIRequestDTO) -> CardAIInputDTO:
         """Persist the provided data as draft without contacting the LLM."""
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.1] - 2024-06-06
+### Added
+- Botones en el historial de resultados para exportar cada `cards_ai_output` en JSON, Markdown, DOCX o HTML sin abandonar la ventana.
+- Acción para eliminar resultados individuales desde el historial con confirmación y actualización en caliente.
+
+### Changed
+- `CardAIService` y `CardAIController` exponen un método de eliminación que delega en el nuevo helper `CardAIOutputDAO.delete_output`.
+- Pruebas unitarias que validan el flujo de eliminación y el manejo de errores del DAO.
+
 ## [0.9.0] - 2024-06-05
 ### Added
 - Servicio `RAGContextService` que indexa los DDE/HU almacenados en SQL Server y expone búsquedas semánticas reutilizables mediante un índice TF-IDF ligero en memoria.
