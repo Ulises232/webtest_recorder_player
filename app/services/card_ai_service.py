@@ -194,7 +194,7 @@ class CardAIService:
                 self._config.get_api_url(),
                 headers=headers,
                 json=payload,
-                timeout=180,
+                timeout=180000,
             )
         except requests.RequestException as exc:
             raise CardAIServiceError(f"No fue posible contactar al modelo: {exc}") from exc
