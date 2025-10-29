@@ -395,10 +395,16 @@ def _open_capture_form(
     def _set_running(value: bool) -> None:
         """Enable or disable the action buttons."""
 
+        if not buttons.winfo_exists():
+            return
+
         running.set(value)
         state = tk.DISABLED if value else tk.NORMAL
         for button in buttons.winfo_children():
-            button.configure(state=state)
+            try:
+                button.configure(state=state)
+            except tk.TclError:
+                continue
 
     def _background_call(func: Callable[[], None]) -> None:
         """Execute the given callable in a worker thread."""
@@ -407,7 +413,10 @@ def _open_capture_form(
             try:
                 func()
             finally:
-                win.after(0, lambda: _set_running(False))
+                try:
+                    win.after(0, lambda: _set_running(False))
+                except tk.TclError:
+                    _set_running(False)
 
         _set_running(True)
         threading.Thread(target=worker, daemon=True).start()

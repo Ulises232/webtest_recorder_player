@@ -13,6 +13,7 @@
 
 ### Fixed
 - Se corrige un `NameError` en la vista del generador DDE/HU al mostrar mensajes de error desde hilos en segundo plano.
+- Se evita un `TclError` al restaurar los botones de acciones cuando la ventana de captura se cierra durante una generación.
 
 ## [0.7.1] - 2024-06-01
 ### Added
