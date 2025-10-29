@@ -276,18 +276,60 @@ def _show_generation_result(
         command=lambda: _show_history(parent, controller, card.cardId),
     ).pack(side=RIGHT)
 
+    running = tk.BooleanVar(value=False)
+
+    def _set_running(value: bool) -> None:
+        """Enable or disable the action buttons while processing."""
+
+        if not actions.winfo_exists():
+            return
+
+        running.set(value)
+        state = tk.DISABLED if value else tk.NORMAL
+        for button in actions.winfo_children():
+            try:
+                button.configure(state=state)
+            except tk.TclError:
+                continue
+
+    def _background_call(func: Callable[[], None]) -> None:
+        """Execute the provided callback in a worker thread."""
+
+        def worker() -> None:
+            try:
+                func()
+            finally:
+                try:
+                    win.after(0, lambda: _set_running(False))
+                except tk.TclError:
+                    _set_running(False)
+
+        _set_running(True)
+        threading.Thread(target=worker, daemon=True).start()
+
     def regenerate() -> None:
         """Trigger a new generation using the stored input."""
 
         if not messagebox.askyesno("Regenerar", "¿Deseas generar nuevamente con los mismos datos?"):
             return
-        try:
-            new_result = controller.regenerate(result.input.inputId)
-        except RuntimeError as exc:
-            messagebox.showerror("Error", str(exc))
-            return
-        win.destroy()
-        _show_generation_result(parent, controller, card, new_result)
+
+        def _task() -> None:
+            try:
+                new_result = controller.regenerate(result.input.inputId)
+            except RuntimeError as exc:
+                error_message = str(exc)
+                win.after(0, lambda message=error_message: messagebox.showerror("Error", message))
+                return
+
+            win.after(
+                0,
+                lambda: (
+                    win.destroy(),
+                    _show_generation_result(parent, controller, card, new_result),
+                ),
+            )
+
+        _background_call(_task)
 
     tb.Button(actions, text="Regenerar", bootstyle=PRIMARY, command=regenerate).pack(side=RIGHT, padx=(0, 8))
 
