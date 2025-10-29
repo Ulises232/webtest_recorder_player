@@ -10,7 +10,7 @@ if TYPE_CHECKING:  # pragma: no cover - only used for typing hints
     import pymssql
 
 from app.daos.database import DatabaseConnectorError
-from app.dtos.card_ai_dto import CardAIOutputDTO
+from app.dtos.card_ai_dto import CardAIContextDocumentDTO, CardAIOutputDTO
 
 
 class CardAIOutputDAOError(RuntimeError):
@@ -174,4 +174,46 @@ class CardAIOutputDAO:
                 )
             )
         return outputs
+
+    def list_recent_outputs_for_context(self, limit: int = 500) -> List[CardAIContextDocumentDTO]:
+        """Return recent outputs with their associated card titles for RAG indexing."""
+
+        self._ensure_schema()
+        try:
+            connection = self._connection_factory()
+        except DatabaseConnectorError as exc:  # pragma: no cover - depende del entorno
+            raise CardAIOutputDAOError(str(exc)) from exc
+
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                (
+                    "SELECT TOP (%s) o.output_id, o.card_id, COALESCE(c.title, ''), o.content_json "
+                    "FROM dbo.cards_ai_outputs o "
+                    "INNER JOIN dbo.cards c ON c.id = o.card_id "
+                    "ORDER BY o.output_id DESC"
+                ),
+                (limit,),
+            )
+            rows: Iterable[Tuple] = cursor.fetchall()
+        except Exception as exc:  # pragma: no cover - depende del driver
+            connection.close()
+            raise CardAIOutputDAOError("No fue posible consultar los resultados para el contexto.") from exc
+
+        connection.close()
+        documents: List[CardAIContextDocumentDTO] = []
+        for row in rows:
+            try:
+                content = json.loads(row[3] or "{}")
+            except ValueError:
+                content = {}
+            documents.append(
+                CardAIContextDocumentDTO(
+                    outputId=int(row[0]),
+                    cardId=int(row[1]),
+                    cardTitle=str(row[2] or ""),
+                    content=content,
+                )
+            )
+        return documents
 

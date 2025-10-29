@@ -126,6 +126,19 @@ class FakeOutputDAO:
         return []
 
 
+class FakeContextService:
+    """Provide deterministic context snippets for the prompt builder tests."""
+
+    def __init__(self) -> None:
+        self.receivedQueries: List[str] = []
+        self.contextText = "Título: Demo previo\nDescripción: Caso histórico"
+        self.contextTitles = ["EA-100 Ajuste de vencimientos"]
+
+    def search_context(self, query: str, limit: int = 3):
+        self.receivedQueries.append(query)
+        return self.contextText, self.contextTitles
+
+
 class FakeResponse:
     """Minimal requests.Response stand-in used for the LLM client."""
 
@@ -292,6 +305,48 @@ def test_generate_document_sends_system_prompt_first() -> None:
     assert messages[0]["content"] == DEFAULT_SYSTEM_PROMPT
     assert messages[1]["role"] == "user"
     assert "Genera un documento formal" in messages[1]["content"]
+
+
+def test_generate_document_injects_retrieved_context() -> None:
+    """The user prompt should include recovered context and store titles in the output."""
+
+    captured: Dict[str, object] = {}
+
+    def capturing_http_post(*_args, **kwargs) -> FakeResponse:
+        captured["payload"] = kwargs.get("json")
+        return successful_http_post()
+
+    fake_input = FakeInputDAO()
+    fake_output = FakeOutputDAO()
+    context_service = FakeContextService()
+    service = CardAIService(
+        FakeCardDAO(),
+        fake_input,
+        fake_output,
+        http_post=capturing_http_post,
+        context_service=context_service,
+    )
+
+    payload = CardAIRequestDTO(
+        cardId=1,
+        tipo="INCIDENCIA",
+        descripcion="Descripción",  # pragma: no branch - datos de prueba
+        analisis="",
+        recomendaciones="",
+        cosasPrevenir="",
+        infoAdicional="",
+    )
+
+    result = service.generate_document(payload)
+
+    payload_sent = captured.get("payload")
+    assert isinstance(payload_sent, dict)
+    messages = payload_sent["messages"]  # type: ignore[index]
+    user_content = messages[1]["content"]
+    assert "Casos previos similares" in user_content
+    assert "Título: Demo previo" in user_content
+    assert context_service.receivedQueries[0].startswith("EA-172")
+    assert result.output.content["usados_como_contexto"] == context_service.contextTitles
 
 
 def test_generate_document_uses_custom_system_prompt_file(tmp_path) -> None:
