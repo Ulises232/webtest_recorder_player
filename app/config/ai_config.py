@@ -16,7 +16,7 @@ class AIConfiguration:
     DEFAULT_MODEL: str = "qwen/qwen2.5-vl-7b"
     DEFAULT_TEMPERATURE: float = 0.35
     DEFAULT_TOP_P: float = 0.9
-    DEFAULT_MAX_TOKENS: int = 3000
+    DEFAULT_MAX_TOKENS: int = 10000
     DEFAULT_SYSTEM_PROMPT_PATH: str = str(
         Path(__file__).resolve().parents[1] / "prompts" / "system_prompt.yaml"
     )
