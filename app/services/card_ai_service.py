@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional
 
 try:  # pragma: no cover - fallback for environments without requests installed
     import requests
@@ -38,6 +38,9 @@ from app.dtos.card_ai_dto import (
     CardFiltersDTO,
 )
 
+if TYPE_CHECKING:  # pragma: no cover - solo para anotaciones
+    from app.services.rag_context_service import RAGContextService
+
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +60,7 @@ class CardAIService:
         configuration: Optional[AIConfiguration] = None,
         http_post: Optional[Callable[..., requests.Response]] = None,
         system_prompt_loader: Optional[Callable[[], str]] = None,
+        context_service: Optional["RAGContextService"] = None,
     ) -> None:
         """Store dependencies used by the service."""
 
@@ -68,6 +72,7 @@ class CardAIService:
         self._system_prompt_loader: Callable[[], str] = (
             system_prompt_loader or self._load_system_prompt_from_file
         )
+        self._context_service = context_service
 
     @staticmethod
     def calculate_completeness(payload: CardAIRequestDTO) -> int:
@@ -137,7 +142,13 @@ class CardAIService:
         except CardAIInputDAOError as exc:
             raise CardAIServiceError(str(exc)) from exc
 
-    def _build_user_prompt(self, tipo: str, titulo_card: str, payload: CardAIRequestDTO) -> str:
+    def _build_user_prompt(
+        self,
+        tipo: str,
+        titulo_card: str,
+        payload: CardAIRequestDTO,
+        context: str = "",
+    ) -> str:
         """Return the message sent to the LLM following the requested format."""
 
         data = {
@@ -147,7 +158,14 @@ class CardAIService:
             "cosas_prevenir": payload.cosasPrevenir or "",
             "info_adicional": payload.infoAdicional or "",
         }
-        return (
+        context_block = ""
+        if context.strip():
+            context_block = (
+                "Casos previos similares recuperados del historial:\n"
+                f"{context.strip()}\n\n"
+                "Utiliza el contexto anterior como referencia para enriquecer el documento sin repetirlo textualmente.\n\n"
+            )
+        base_prompt = (
             "Genera un documento formal alineado con el estándar corporativo de Sistemas Premium.\n\n"
             "Datos de entrada:\n"
             f"- Tipo requerido: {tipo}\n"
@@ -175,6 +193,7 @@ class CardAIService:
             "}\n"
             "Entrega únicamente el JSON final"
         )
+        return f"{context_block}{base_prompt}" if context_block else base_prompt
 
     def _call_llm(self, prompt: str) -> Dict[str, object]:
         """Send the completion request to the configured LLM."""
@@ -251,6 +270,29 @@ class CardAIService:
             raise CardAIServiceError(str(exc)) from exc
 
         prompt = self._build_user_prompt(payload.tipo, titulo, payload)
+        context_titles: List[str] = []
+        if self._context_service:
+            query_parts = [
+                titulo,
+                payload.descripcion or "",
+                payload.analisis or "",
+                payload.recomendaciones or "",
+                payload.cosasPrevenir or "",
+            ]
+            query = " ".join(part for part in query_parts if part).strip()
+            if query:
+                try:
+                    context_text, context_titles = self._context_service.search_context(query)
+                except Exception as exc:  # pragma: no cover - depende de librerías opcionales
+                    logger.warning("No fue posible recuperar contexto previo: %s", exc)
+                else:
+                    if context_text:
+                        prompt = self._build_user_prompt(
+                            payload.tipo,
+                            titulo,
+                            payload,
+                            context_text,
+                        )
         llm_response = self._call_llm(prompt)
 
         try:
@@ -262,6 +304,9 @@ class CardAIService:
             content_json = json.loads(content)
         except ValueError as exc:
             raise CardAIServiceError("El modelo no devolvió un JSON válido.") from exc
+
+        if context_titles:
+            content_json["usados_como_contexto"] = context_titles
 
         try:
             output_dto = self._output_dao.create_output(

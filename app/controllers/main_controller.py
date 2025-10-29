@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from app.config.storage_paths import (
     getEvidenceDirectory,
     getLoginCachePath,
@@ -27,6 +29,7 @@ from app.services.card_ai_service import CardAIService
 from app.services.browser_service import BrowserService
 from app.services.history_service import HistoryService
 from app.services.naming_service import NamingService
+from app.services.rag_context_service import RAGContextService, RAGContextServiceError
 from app.services.session_service import SessionService
 
 
@@ -42,6 +45,8 @@ class MainController:
 
     SESSIONS_DIR = getSessionsDirectory()
     EVIDENCE_DIR = getEvidenceDirectory()
+
+    _logger = logging.getLogger(__name__)
 
     def __init__(self) -> None:
         """Bootstrap services and expose domain specific controllers."""
@@ -74,9 +79,19 @@ class MainController:
         )
 
         cards_connector = DatabaseConnector().connection_factory()
+        card_output_dao = CardAIOutputDAO(cards_connector)
+        context_service = None
+        try:
+            context_service = RAGContextService(card_output_dao)
+            context_service.index_from_database()
+        except (RAGContextServiceError, Exception) as exc:  # pragma: no cover - depende de entorno
+            self._logger.warning("No fue posible preparar el contexto RAG: %s", exc)
+            context_service = None
+
         card_service = CardAIService(
             CardDAO(cards_connector),
             CardAIInputDAO(cards_connector),
-            CardAIOutputDAO(cards_connector),
+            card_output_dao,
+            context_service=context_service,
         )
         self.cardsAI = CardAIController(card_service)

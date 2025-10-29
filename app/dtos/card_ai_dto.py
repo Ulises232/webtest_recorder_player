@@ -65,6 +65,16 @@ class CardAIOutputDTO:
 
 
 @dataclass
+class CardAIContextDocumentDTO:
+    """Expose a simplified view of outputs required for RAG indexing."""
+
+    outputId: int
+    cardId: int
+    cardTitle: str
+    content: Dict[str, Any]
+
+
+@dataclass
 class CardAIHistoryEntryDTO:
     """Combine input and output metadata for history listings."""
 
