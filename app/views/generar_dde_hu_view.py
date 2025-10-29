@@ -95,17 +95,21 @@ def buildGenerarDdeHuView(
 
         status_var.set("Cargando tarjetas...")
 
-        def worker() -> None:
+        selected_tipo = tipo_var.get() or None
+        selected_status = status_filter_var.get() or None
+        search_text = search_var.get() or ""
+        local_filters = CardFilters(
+            tipo=selected_tipo,
+            status=selected_status,
+            startDate=None,
+            endDate=None,
+            searchText=search_text,
+        )
+
+        def worker(filters: CardFilters) -> None:
             nonlocal cards_data
-            local_filters = CardFilters(
-                tipo=tipo_var.get() or None,
-                status=status_filter_var.get() or None,
-                startDate=None,
-                endDate=None,
-                searchText=search_var.get() or "",
-            )
             try:
-                result = controller.listCards(local_filters)
+                result = controller.listCards(filters)
             except CardsControllerError as exc:
                 error_message = str(exc)
                 root.after(0, lambda msg=error_message: Messagebox.showerror("Tarjetas", msg))
@@ -132,7 +136,7 @@ def buildGenerarDdeHuView(
 
             root.after(0, apply)
 
-        threading.Thread(target=worker, daemon=True).start()
+        threading.Thread(target=worker, args=(local_filters,), daemon=True).start()
 
     def _on_search_change(*_) -> None:
         """Debounce the search field updates."""
