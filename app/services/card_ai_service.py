@@ -173,7 +173,7 @@ class CardAIService:
             "  \"requerimientos_especiales\": string[],\n"
             "  \"criterios_aceptacion\": string[]\n"
             "}\n"
-            "Entrega únicamente el JSON final, sin comentarios ni texto adicional."
+            "Entrega únicamente el JSON final"
         )
 
     def _call_llm(self, prompt: str) -> Dict[str, object]:
