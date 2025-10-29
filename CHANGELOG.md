@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.0] - 2024-06-02
+### Added
+- Vista dedicada para generar documentos DDE/HU asistidos por IA con filtros, buscador en tiempo real y barra de progreso de completitud. 
+- Controlador, servicio y DAOs especializados para consultar tarjetas, guardar capturas y almacenar respuestas del LLM.
+- Exportación de resultados en formatos JSON, Markdown y DOCX junto con historial de ejecuciones previas.
+- Pruebas unitarias del servicio de IA utilizando dobles de prueba para los DAOs y el cliente HTTP.
+
+### Changed
+- El menú principal incorpora acceso directo al nuevo generador de DDE/HU y actualiza la navegación lateral correspondiente.
+- La documentación del esquema de base de datos describe las tablas `dbo.cards_ai_inputs` y `dbo.cards_ai_outputs` con sus índices.
+
 ## [0.7.1] - 2024-06-01
 ### Added
 - Controladores especializados para autenticación, historial, navegador, nomenclatura y sesiones que encapsulan la coordinación con sus servicios correspondientes.

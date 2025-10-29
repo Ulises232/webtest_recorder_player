@@ -416,4 +416,37 @@ CREATE TABLE dbo.config_deploy_user_paths (
     CONSTRAINT uq_config_deploy_user_paths UNIQUE (group_key, target_name, username),
     CONSTRAINT fk_config_deploy_user_paths_group FOREIGN KEY (group_key) REFERENCES dbo.config_groups([key]) ON DELETE CASCADE
 );
+
+CREATE TABLE dbo.cards_ai_inputs (
+    input_id BIGINT IDENTITY(1,1) PRIMARY KEY,
+    card_id BIGINT NOT NULL,
+    tipo VARCHAR(20) NOT NULL,
+    descripcion NVARCHAR(MAX) NULL,
+    analisis NVARCHAR(MAX) NULL,
+    recomendaciones NVARCHAR(MAX) NULL,
+    cosas_prevenir NVARCHAR(MAX) NULL,
+    info_adicional NVARCHAR(MAX) NULL,
+    completeness_pct TINYINT NOT NULL DEFAULT(0),
+    is_draft BIT NOT NULL DEFAULT(1),
+    created_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    updated_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT fk_cards_ai_inputs_card FOREIGN KEY (card_id) REFERENCES dbo.cards(id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_cards_ai_inputs_card_id ON dbo.cards_ai_inputs (card_id DESC, input_id DESC);
+
+CREATE TABLE dbo.cards_ai_outputs (
+    output_id BIGINT IDENTITY(1,1) PRIMARY KEY,
+    card_id BIGINT NOT NULL,
+    input_id BIGINT NULL,
+    llm_id VARCHAR(100) NULL,
+    llm_model VARCHAR(100) NULL,
+    llm_usage_json NVARCHAR(MAX) NULL,
+    content_json NVARCHAR(MAX) NOT NULL,
+    created_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT fk_cards_ai_outputs_card FOREIGN KEY (card_id) REFERENCES dbo.cards(id) ON DELETE CASCADE,
+    CONSTRAINT fk_cards_ai_outputs_input FOREIGN KEY (input_id) REFERENCES dbo.cards_ai_inputs(input_id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_cards_ai_outputs_card_id ON dbo.cards_ai_outputs (card_id DESC, output_id DESC);
 ```

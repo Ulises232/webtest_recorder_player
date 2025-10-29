@@ -84,6 +84,7 @@ from app.views.alta_ciclos_view import build_alta_ciclos_view
 from app.views.modificacion_ciclos_view import build_modificacion_ciclos_view
 from app.views.pruebas_view import PruebasViewContext, build_pruebas_view
 from app.views.login_view import build_login_view
+from app.views.cards_ai_view import build_cards_ai_view
 
 # --- helper: enable mouse wheel scrolling on canvas/treeview ---
 def _bind_mousewheel(_widget, _yview_callable):
@@ -282,6 +283,7 @@ def run_gui():
     frame_gen_auto   = tb.Frame(content_area, padding=(16,10))
     frame_gen_manual = tb.Frame(content_area, padding=(16,10))
     frame_mod_matriz = tb.Frame(content_area, padding=(16,10))
+    frame_cards_ai   = tb.Frame(content_area, padding=(16,10))
     frame_alta_cic   = tb.Frame(content_area, padding=(16,10))
     frame_mod_cic    = tb.Frame(content_area, padding=(16,10))
     frame_pruebas    = tb.Frame(content_area, padding=(16,0))   # flujo existente
@@ -336,6 +338,7 @@ def run_gui():
 
     build_generacion_manual_view(app, frame_gen_manual, _bind_mousewheel)
     build_modificacion_matriz_view(frame_mod_matriz)
+    build_cards_ai_view(app, frame_cards_ai, controller.cardsAI, _bind_mousewheel)
     build_alta_ciclos_view(frame_alta_cic)
     build_modificacion_ciclos_view(frame_mod_cic)
 
@@ -351,6 +354,7 @@ def run_gui():
     _cards_grid(frame_launcher, [
         ("Generación Automática", "Matrices por lote",               "⚙️", lambda: go_section("GEN_AUTO", from_launcher=True)),
         ("Generación Manual",     "Genera una matriz puntual",       "✍️", lambda: go_section("GEN_MANUAL", from_launcher=True)),
+        ("Generador DDE/HU",      "Documentos asistidos por IA",     "🤖", lambda: go_section("CARDS_AI", from_launcher=True)),
         ("Modificación de Matriz","Busca y edita matrices",          "📝", lambda: go_section("MOD_MATRIZ", from_launcher=True)),
         ("Alta de Ciclos",        "Crea ciclos nuevos",              "➕", lambda: go_section("ALTA_CICLOS", from_launcher=True)),
         ("Modificación de Ciclos","Actualiza ciclos existentes",     "✏️", lambda: go_section("MOD_CICLOS", from_launcher=True)),
@@ -377,6 +381,7 @@ def run_gui():
     _nav_item(sidebar, "✍️", "Generación Manual",     "GEN_MANUAL")
     tb.Separator(sidebar, bootstyle=SECONDARY).pack(fill=X, pady=8)
     _nav_item(sidebar, "📝", "Modificación de Matriz", "MOD_MATRIZ")
+    _nav_item(sidebar, "🤖", "Generador DDE/HU", "CARDS_AI")
     _nav_item(sidebar, "➕", "Alta de Ciclos",          "ALTA_CICLOS")
     _nav_item(sidebar, "✏️", "Modificación de Ciclos", "MOD_CICLOS")
     tb.Separator(sidebar, bootstyle=SECONDARY).pack(fill=X, pady=8)
@@ -388,6 +393,7 @@ def run_gui():
         "GEN_AUTO": frame_gen_auto,
         "GEN_MANUAL": frame_gen_manual,
         "MOD_MATRIZ": frame_mod_matriz,
+        "CARDS_AI": frame_cards_ai,
         "ALTA_CICLOS": frame_alta_cic,
         "MOD_CICLOS": frame_mod_cic,
         "PRUEBAS": frame_pruebas,
