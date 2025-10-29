@@ -314,7 +314,7 @@ class CardAIService:
             raise CardAIServiceError("La respuesta del modelo no contiene contenido utilizable.") from exc
 
         try:
-            content_json = json.loads(content)
+            content_json = json.loads(self._normalize_json_content(content))
         except ValueError as exc:
             raise CardAIServiceError("El modelo no devolvió un JSON válido.") from exc
 
@@ -334,6 +334,27 @@ class CardAIService:
             raise CardAIServiceError(str(exc)) from exc
 
         return CardAIGenerationResultDTO(input=input_dto, output=output_dto, completenessPct=completeness)
+
+    def _normalize_json_content(self, raw_content: str) -> str:
+        """Remove markdown code fences from the JSON block returned by the LLM.
+
+        Args:
+            raw_content: Texto crudo devuelto dentro del mensaje del asistente.
+
+        Returns:
+            Cadena lista para ser interpretada como JSON.
+        """
+
+        cleaned = raw_content.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned[3:]
+            cleaned = cleaned.lstrip()
+            if cleaned.lower().startswith("json"):
+                cleaned = cleaned[4:]
+            cleaned = cleaned.lstrip("\n\r ")
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+        return cleaned.strip()
 
     def regenerate_from_input(self, input_id: int) -> CardAIGenerationResultDTO:
         """Trigger a new generation using the stored input fields."""

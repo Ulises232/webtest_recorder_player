@@ -182,6 +182,26 @@ def successful_http_post(*_args, **_kwargs) -> FakeResponse:
     )
 
 
+def codeblock_http_post(*_args, **_kwargs) -> FakeResponse:
+    """Return a fake response wrapping the JSON output in markdown fences."""
+
+    return FakeResponse(
+        {
+            "id": "chatcmpl-2",
+            "model": "qwen/qwen2.5-vl-7b",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "```json\n{\n  \"titulo\": \"Demo cercado\"\n}\n```",
+                    }
+                }
+            ],
+            "usage": {"total_tokens": 12},
+        }
+    )
+
+
 def failing_http_post(*_args, **_kwargs) -> FakeResponse:
     """Return a fake response indicating a server failure."""
 
@@ -289,6 +309,30 @@ def test_generate_document_calls_llm_and_stores_output() -> None:
     assert result.input.inputId == fake_input.created[0]["dto"].inputId
     assert result.output.outputId == fake_output.created[0].outputId
     assert result.output.content["titulo"] == "Demo"
+
+
+def test_generate_document_parses_markdown_fenced_json() -> None:
+    """Responses with markdown code fences should be sanitized before decoding."""
+
+    fake_input = FakeInputDAO()
+    fake_output = FakeOutputDAO()
+    service = CardAIService(
+        FakeCardDAO(),
+        fake_input,
+        fake_output,
+        http_post=codeblock_http_post,
+    )
+    payload = CardAIRequestDTO(
+        cardId=1,
+        tipo="INCIDENCIA",
+        descripcion="Descripción",
+        analisis="",
+        recomendaciones="",
+        cosasPrevenir="",
+        infoAdicional="",
+    )
+    result = service.generate_document(payload)
+    assert result.output.content["titulo"] == "Demo cercado"
 
 
 def test_generate_document_handles_llm_errors() -> None:
