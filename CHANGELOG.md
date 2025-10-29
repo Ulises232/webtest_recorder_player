@@ -9,7 +9,7 @@
 - `CardAIService` ahora consulta el contexto recuperado antes de construir el prompt y almacena los títulos utilizados en `usados_como_contexto`.
 - `MainController` inicializa el índice semántico durante el arranque y lo inyecta en el servicio de tarjetas para disponer del contexto histórico.
 - Se elimina la dependencia directa de `pyodbc` porque la conexión a SQL Server ya está cubierta por los conectores existentes.
-- Se ajustan las versiones de `chromadb` (0.5.5), `tiktoken` (0.7.0) y `numpy` (1.26.4) para alinearse con los binarios disponibles en Python 3.10 sobre Windows, evitando la compilación manual de dependencias.
+- Se ajustan las versiones de `chromadb` (0.5.5), `tiktoken` (0.7.0) y `numpy` (1.23.5) para alinearse con los binarios disponibles en Python 3.10 (incluyendo instalaciones de 32 bits en Windows) y evitar la compilación manual de dependencias.
 
 ## [0.8.2] - 2024-06-04
 ### Added
