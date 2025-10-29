@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+from queue import Empty, Queue
 from typing import Callable, Dict, List, Optional
 import tkinter as tk
 from tkinter import filedialog, ttk
@@ -40,6 +41,31 @@ def buildGenerarDdeHuView(
     cards_data: List[Dict[str, object]] = []
     history_data: List[Dict[str, object]] = []
     current_result: Optional[Dict[str, object]] = None
+    ui_queue: Queue[Callable[[], None]] = Queue()
+
+    def _dispatch_to_ui(callback: Callable[[], None]) -> None:
+        """Enqueue a callback to run on the Tkinter thread."""
+
+        ui_queue.put(callback)
+
+    def _process_ui_queue() -> None:
+        """Execute callbacks produced by background workers."""
+
+        while True:
+            try:
+                callback = ui_queue.get_nowait()
+            except Empty:
+                break
+            try:
+                callback()
+            except Exception as exc:  # pragma: no cover - safeguard for UI callbacks
+                Messagebox.showerror(
+                    "Generar DDE/HU",
+                    f"Ocurrió un error al actualizar la interfaz:\n{exc}",
+                )
+        root.after(50, _process_ui_queue)
+
+    root.after(50, _process_ui_queue)
 
     container = tb.Panedwindow(parent, orient="horizontal")
     container.pack(fill=BOTH, expand=YES)
@@ -112,8 +138,8 @@ def buildGenerarDdeHuView(
                 result = controller.listCards(filters)
             except CardsControllerError as exc:
                 error_message = str(exc)
-                root.after(0, lambda msg=error_message: Messagebox.showerror("Tarjetas", msg))
-                root.after(0, lambda: status_var.set("No fue posible cargar las tarjetas."))
+                _dispatch_to_ui(lambda msg=error_message: Messagebox.showerror("Tarjetas", msg))
+                _dispatch_to_ui(lambda: status_var.set("No fue posible cargar las tarjetas."))
                 return
 
             def apply() -> None:
@@ -134,7 +160,7 @@ def buildGenerarDdeHuView(
                     cards_tree.insert("", "end", values=(card.cardId, card.title, card.tipo, card.status, fecha_txt))
                 status_var.set(f"Tarjetas cargadas: {len(cards_data)}")
 
-            root.after(0, apply)
+            _dispatch_to_ui(apply)
 
         threading.Thread(target=worker, args=(local_filters,), daemon=True).start()
 
@@ -332,7 +358,7 @@ def buildGenerarDdeHuView(
                 outputs = controller.listOutputs(card_id)
             except CardsControllerError as exc:
                 error_message = str(exc)
-                root.after(0, lambda msg=error_message: Messagebox.showerror("Historial", msg))
+                _dispatch_to_ui(lambda msg=error_message: Messagebox.showerror("Historial", msg))
                 return
 
             def apply() -> None:
@@ -353,7 +379,7 @@ def buildGenerarDdeHuView(
                         }
                     )
 
-            root.after(0, apply)
+            _dispatch_to_ui(apply)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -379,7 +405,7 @@ def buildGenerarDdeHuView(
                 latest = controller.loadLatestInput(card_id)
             except CardsControllerError as exc:
                 error_message = str(exc)
-                root.after(0, lambda msg=error_message: Messagebox.showerror("Entradas", msg))
+                _dispatch_to_ui(lambda msg=error_message: Messagebox.showerror("Entradas", msg))
                 return
 
             if latest is None:
@@ -399,7 +425,7 @@ def buildGenerarDdeHuView(
                 recoDocumentacion=latest.recoDocumentacion,
             )
 
-            root.after(0, lambda: _set_form_from_payload(payload))
+            _dispatch_to_ui(lambda: _set_form_from_payload(payload))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -419,10 +445,10 @@ def buildGenerarDdeHuView(
                 record = controller.saveDraft(payload)
             except CardsControllerError as exc:
                 error_message = str(exc)
-                root.after(0, lambda msg=error_message: Messagebox.showerror("Borrador", msg))
-                root.after(0, lambda: status_var.set("Error al guardar el borrador."))
+                _dispatch_to_ui(lambda msg=error_message: Messagebox.showerror("Borrador", msg))
+                _dispatch_to_ui(lambda: status_var.set("Error al guardar el borrador."))
                 return
-            root.after(0, lambda: status_var.set(f"Borrador guardado #{record.inputId}."))
+            _dispatch_to_ui(lambda: status_var.set(f"Borrador guardado #{record.inputId}."))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -447,8 +473,8 @@ def buildGenerarDdeHuView(
                 result = controller.generateDocument(payload)
             except CardsControllerError as exc:
                 error_message = str(exc)
-                root.after(0, lambda msg=error_message: Messagebox.showerror("Generar", msg))
-                root.after(0, lambda: status_var.set("Error al generar el documento."))
+                _dispatch_to_ui(lambda msg=error_message: Messagebox.showerror("Generar", msg))
+                _dispatch_to_ui(lambda: status_var.set("Error al generar el documento."))
                 return
 
             def apply() -> None:
@@ -457,7 +483,7 @@ def buildGenerarDdeHuView(
                 _load_history(payload.cardId)
                 _update_completeness()
 
-            root.after(0, apply)
+            _dispatch_to_ui(apply)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -489,8 +515,8 @@ def buildGenerarDdeHuView(
                 result = controller.regenerateFromInput(input_id_int)
             except CardsControllerError as exc:
                 error_message = str(exc)
-                root.after(0, lambda msg=error_message: Messagebox.showerror("Regenerar", msg))
-                root.after(0, lambda: status_var.set("Error al regenerar el documento."))
+                _dispatch_to_ui(lambda msg=error_message: Messagebox.showerror("Regenerar", msg))
+                _dispatch_to_ui(lambda: status_var.set("Error al regenerar el documento."))
                 return
 
             def apply() -> None:
@@ -498,7 +524,7 @@ def buildGenerarDdeHuView(
                 _display_result(result.outputRecord.content)
                 _load_history(result.inputRecord.cardId)
 
-            root.after(0, apply)
+            _dispatch_to_ui(apply)
 
         threading.Thread(target=worker, daemon=True).start()
 
