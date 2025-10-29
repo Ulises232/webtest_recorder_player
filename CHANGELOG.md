@@ -2,14 +2,13 @@
 
 ## [0.9.0] - 2024-06-05
 ### Added
-- Servicio `RAGContextService` basado en ChromaDB que indexa los DDE/HU almacenados en SQL Server y expone búsquedas semánticas reutilizables.
-- Dependencias `chromadb` y `tiktoken` en `requirements.txt` para habilitar la capa de recuperación y embeddings.
+- Servicio `RAGContextService` que indexa los DDE/HU almacenados en SQL Server y expone búsquedas semánticas reutilizables mediante un índice TF-IDF ligero en memoria.
 
 ### Changed
 - `CardAIService` ahora consulta el contexto recuperado antes de construir el prompt y almacena los títulos utilizados en `usados_como_contexto`.
 - `MainController` inicializa el índice semántico durante el arranque y lo inyecta en el servicio de tarjetas para disponer del contexto histórico.
 - Se elimina la dependencia directa de `pyodbc` porque la conexión a SQL Server ya está cubierta por los conectores existentes.
-- Se ajustan las versiones de `chromadb` (0.5.5), `tiktoken` (0.7.0) y `numpy` (1.23.5) para alinearse con los binarios disponibles en Python 3.10 (incluyendo instalaciones de 32 bits en Windows) y evitar la compilación manual de dependencias.
+- Se reemplaza ChromaDB por el índice TF-IDF interno, eliminando las dependencias `chromadb` y `tiktoken` de `requirements.txt` y conservando `numpy==1.23.5` para compatibilidad con pandas en Python 3.10.
 
 ## [0.8.2] - 2024-06-04
 ### Added
