@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.2] - 2024-06-04
+### Added
+- Exportación de resultados en HTML utilizando la plantilla editable `app/templates/card_generation.html`.
+- Prueba unitaria que verifica la inyección de valores de texto y listas en la nueva exportación HTML.
+ 
+### Changed
+- La plantilla `card_generation.html` ahora coincide con el formato solicitado manteniendo todo el estilo embebido en las mismas etiquetas de la tabla.
+
 ## [0.8.1] - 2024-06-03
 ### Changed
 - La solicitud al asistente de IA ahora antepone un mensaje de sistema con las directrices corporativas y actualiza el prompt del usuario para reflejar el nuevo esquema JSON requerido.

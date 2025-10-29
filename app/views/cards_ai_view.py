@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from datetime import datetime
+from html import escape
+from importlib import resources
 from typing import Callable, Dict, List, Optional
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -19,6 +22,9 @@ from app.dtos.card_ai_dto import CardAIGenerationResultDTO, CardAIHistoryEntryDT
 
 TYPE_CHOICES = ("INCIDENCIA", "MEJORA", "HU")
 STATUS_CHOICES = ("pending", "in_progress", "done", "closed")
+
+HTML_TEMPLATE_PACKAGE = "app.templates"
+HTML_TEMPLATE_NAME = "card_generation.html"
 
 
 def _format_datetime(value: Optional[datetime]) -> str:
@@ -131,6 +137,92 @@ def _export_docx(content: Dict[str, object], parent: tk.Misc) -> None:
         document.save(path)
     except Exception as exc:  # pragma: no cover - depende de la librería externa
         messagebox.showerror("Error", f"No se pudo exportar el DOCX:\n{exc}")
+    else:
+        messagebox.showinfo("Exportado", f"Archivo guardado en:\n{path}")
+
+
+def _load_html_template() -> str:
+    """Retrieve the HTML template used for document exports."""
+
+    try:
+        template_resource = resources.files(HTML_TEMPLATE_PACKAGE).joinpath(HTML_TEMPLATE_NAME)
+    except ModuleNotFoundError as exc:  # pragma: no cover - configuración inválida
+        raise FileNotFoundError("No se encontró el paquete de plantillas HTML.") from exc
+
+    try:
+        with template_resource.open("r", encoding="utf-8") as handle:
+            return handle.read()
+    except FileNotFoundError as exc:
+        raise FileNotFoundError("No se encontró la plantilla HTML configurada.") from exc
+    except OSError as exc:  # pragma: no cover - errores del sistema de archivos
+        raise OSError("Ocurrió un error al leer la plantilla HTML.") from exc
+
+
+def _format_html_value(value: object) -> str:
+    """Convert plain text or lists into HTML-friendly blocks."""
+
+    if isinstance(value, list):
+        items = [escape(str(item)) for item in value if str(item).strip()]
+        if not items:
+            return "&nbsp;"
+        return "<ul>" + "".join(f"<li>{item}</li>" for item in items) + "</ul>"
+
+    if value is None:
+        return "&nbsp;"
+
+    text = escape(str(value).strip())
+    if not text:
+        return "&nbsp;"
+    return text.replace("\n", "<br />")
+
+
+def _build_html_document(content: Dict[str, object]) -> str:
+    """Render the HTML export by injecting the AI response into the template."""
+
+    template = _load_html_template()
+    placeholders: Dict[str, str] = {
+        "titulo": _format_html_value(content.get("titulo")),
+        "tipo": _format_html_value(content.get("tipo")),
+        "fecha": _format_html_value(content.get("fecha")),
+        "hora_inicio": _format_html_value(content.get("hora_inicio")),
+        "hora_fin": _format_html_value(content.get("hora_fin")),
+        "lugar": _format_html_value(content.get("lugar")),
+        "que_necesitas": _format_html_value(content.get("que_necesitas")),
+        "para_que_lo_necesitas": _format_html_value(content.get("para_que_lo_necesitas")),
+        "como_lo_necesitas": _format_html_value(content.get("como_lo_necesitas")),
+        "requerimientos_funcionales": _format_html_value(content.get("requerimientos_funcionales")),
+        "requerimientos_especiales": _format_html_value(content.get("requerimientos_especiales")),
+        "criterios_aceptacion": _format_html_value(content.get("criterios_aceptacion")),
+    }
+
+    rendered = template
+    for key, value in placeholders.items():
+        rendered = rendered.replace(f"{{{{{key}}}}}", value)
+
+    rendered = re.sub(r"\{\{[a-zA-Z0-9_]+\}\}", "&nbsp;", rendered)
+    return rendered
+
+
+def _export_html(content: Dict[str, object], parent: tk.Misc) -> None:
+    """Generate an HTML file using the configurable template."""
+
+    path = filedialog.asksaveasfilename(
+        parent=parent,
+        defaultextension=".html",
+        filetypes=[("HTML", "*.html")],
+        title="Exportar resultado a HTML",
+    )
+    if not path:
+        return
+
+    try:
+        document = _build_html_document(content)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(document)
+    except FileNotFoundError as exc:
+        messagebox.showerror("Error", str(exc))
+    except OSError as exc:
+        messagebox.showerror("Error", f"No se pudo exportar el HTML:\n{exc}")
     else:
         messagebox.showinfo("Exportado", f"Archivo guardado en:\n{path}")
 
@@ -267,6 +359,12 @@ def _show_generation_result(
         text="Exportar DOCX",
         bootstyle=SECONDARY,
         command=lambda: _export_docx(result.output.content, win),
+    ).pack(side=LEFT, padx=6)
+    tb.Button(
+        actions,
+        text="Exportar HTML",
+        bootstyle=SECONDARY,
+        command=lambda: _export_html(result.output.content, win),
     ).pack(side=LEFT, padx=6)
 
     tb.Button(
