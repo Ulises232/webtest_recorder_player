@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.9.3] - 2024-06-07
+### Fixed
+- `CardAIService` ahora limpia los cercos de código Markdown (por ejemplo, bloques iniciados con `````json```) antes de intentar decodificar el JSON devuelto por el LLM.
+- Se agregó una prueba unitaria que garantiza la compatibilidad con respuestas cercadas.
+
 ## [0.9.2] - 2024-06-07
 ### Changed
 - El servicio de IA ahora envía el contexto histórico como mensaje `assistant` previo al usuario para simular lineamientos previos sin contaminar el prompt principal.
