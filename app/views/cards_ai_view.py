@@ -833,6 +833,15 @@ def build_cards_ai_view(
     actions_frame.pack(fill=X)
     status_label = tb.Label(actions_frame, text="Selecciona una tarjeta para comenzar.", bootstyle=SECONDARY)
     status_label.pack(side=LEFT)
+    history_button = tb.Button(
+        actions_frame,
+        text="Historial",
+        bootstyle=INFO,
+        state=tk.DISABLED,
+        command=lambda: _show_history(root, controller, selected_card[0].cardId)
+        if selected_card
+        else None,
+    )
     generate_button = tb.Button(
         actions_frame,
         text="Generar DDE/HU",
@@ -841,6 +850,7 @@ def build_cards_ai_view(
         command=lambda: _open_capture_form(root, controller, selected_card[0]) if selected_card else None,
     )
     generate_button.pack(side=RIGHT)
+    history_button.pack(side=RIGHT, padx=(0, 6))
 
     selected_card: List[CardDTO] = []
     current_cards: List[CardDTO] = []
@@ -875,6 +885,7 @@ def build_cards_ai_view(
         current_cards[:] = cards
         selected_card.clear()
         generate_button.configure(state=tk.DISABLED)
+        history_button.configure(state=tk.DISABLED)
         tree.delete(*tree.get_children(""))
         for card in cards:
             tree.insert(
@@ -892,7 +903,7 @@ def build_cards_ai_view(
         status_label.configure(text=f"{len(cards)} tarjeta(s) encontradas.")
 
     def _on_select(event: tk.Event) -> None:
-        """Enable the generate button when a card is selected."""
+        """Enable the action buttons when a card is selected."""
 
         selection = tree.selection()
         if not selection:
@@ -904,7 +915,9 @@ def build_cards_ai_view(
             if card.cardId == card_id:
                 selected_card[:] = [card]
                 break
-        generate_button.configure(state=tk.NORMAL if selected_card else tk.DISABLED)
+        state = tk.NORMAL if selected_card else tk.DISABLED
+        generate_button.configure(state=state)
+        history_button.configure(state=state)
 
     tree.bind("<<TreeviewSelect>>", _on_select)
 

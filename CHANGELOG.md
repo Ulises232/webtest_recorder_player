@@ -4,6 +4,7 @@
 ### Added
 - Botones en el historial de resultados para exportar cada `cards_ai_output` en JSON, Markdown, DOCX o HTML sin abandonar la ventana.
 - Acción para eliminar resultados individuales desde el historial con confirmación y actualización en caliente.
+- Botón en la vista de tarjetas que abre el historial de resultados sin esperar una nueva generación.
 
 ### Changed
 - `CardAIService` y `CardAIController` exponen un método de eliminación que delega en el nuevo helper `CardAIOutputDAO.delete_output`.
