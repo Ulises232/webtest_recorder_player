@@ -350,7 +350,7 @@ def test_generate_document_sends_system_prompt_first() -> None:
 
 
 def test_generate_document_injects_retrieved_context() -> None:
-    """The user prompt should include recovered context and store titles in the output."""
+    """The conversation should include recovered context and store titles in the output."""
 
     captured: Dict[str, object] = {}
 
@@ -384,9 +384,11 @@ def test_generate_document_injects_retrieved_context() -> None:
     payload_sent = captured.get("payload")
     assert isinstance(payload_sent, dict)
     messages = payload_sent["messages"]  # type: ignore[index]
-    user_content = messages[1]["content"]
-    assert "Casos previos similares" in user_content
-    assert "Título: Demo previo" in user_content
+    assert messages[0]["role"] == "system"
+    assert messages[1]["role"] == "assistant"
+    assert "Contexto extendido" in messages[1]["content"]
+    assert "Título: Demo previo" in messages[1]["content"]
+    assert messages[2]["role"] == "user"
     assert context_service.receivedQueries[0].startswith("EA-172")
     assert result.output.content["usados_como_contexto"] == context_service.contextTitles
 

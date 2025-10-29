@@ -155,7 +155,6 @@ class CardAIService:
         tipo: str,
         titulo_card: str,
         payload: CardAIRequestDTO,
-        context: str = "",
     ) -> str:
         """Return the message sent to the LLM following the requested format."""
 
@@ -166,13 +165,6 @@ class CardAIService:
             "cosas_prevenir": payload.cosasPrevenir or "",
             "info_adicional": payload.infoAdicional or "",
         }
-        context_block = ""
-        if context.strip():
-            context_block = (
-                "Casos previos similares recuperados del historial:\n"
-                f"{context.strip()}\n\n"
-                "Utiliza el contexto anterior como referencia para enriquecer el documento sin repetirlo textualmente.\n\n"
-            )
         base_prompt = (
             "Genera un documento formal alineado con el estándar corporativo de Sistemas Premium.\n\n"
             "Datos de entrada:\n"
@@ -201,9 +193,20 @@ class CardAIService:
             "}\n"
             "Entrega únicamente el JSON final"
         )
-        return f"{context_block}{base_prompt}" if context_block else base_prompt
+        return base_prompt
 
-    def _call_llm(self, prompt: str) -> Dict[str, object]:
+    @staticmethod
+    def _build_context_message(context: str) -> str:
+        """Compose the extended context instructions for the LLM conversation."""
+
+        cleaned_context = context.strip()
+        return (
+            "Contexto extendido recuperado del historial de DDE/HU previos:\n"
+            f"{cleaned_context}\n\n"
+            "Integra la información anterior únicamente como referencia técnica; evita copiarla textualmente y prioriza la coherencia con el nuevo caso."
+        )
+
+    def _call_llm(self, prompt: str, context: str = "") -> Dict[str, object]:
         """Send the completion request to the configured LLM."""
 
         headers = {"Content-Type": "application/json"}
@@ -222,12 +225,21 @@ class CardAIService:
                 "No fue posible cargar el prompt de sistema solicitado."
             ) from exc
 
+        messages: List[Dict[str, str]] = [
+            {"role": "system", "content": system_prompt},
+        ]
+        if context.strip():
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": self._build_context_message(context),
+                }
+            )
+        messages.append({"role": "user", "content": prompt})
+
         payload = {
             "model": self._config.get_model_name(),
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt},
-            ],
+            "messages": messages,
             "temperature": self._config.get_temperature(),
             "top_p": self._config.get_top_p(),
             "max_tokens": self._config.get_max_tokens(),
@@ -278,6 +290,7 @@ class CardAIService:
             raise CardAIServiceError(str(exc)) from exc
 
         prompt = self._build_user_prompt(payload.tipo, titulo, payload)
+        context_text = ""
         context_titles: List[str] = []
         if self._context_service:
             query_parts = [
@@ -293,15 +306,7 @@ class CardAIService:
                     context_text, context_titles = self._context_service.search_context(query)
                 except Exception as exc:  # pragma: no cover - depende de librerías opcionales
                     logger.warning("No fue posible recuperar contexto previo: %s", exc)
-                else:
-                    if context_text:
-                        prompt = self._build_user_prompt(
-                            payload.tipo,
-                            titulo,
-                            payload,
-                            context_text,
-                        )
-        llm_response = self._call_llm(prompt)
+        llm_response = self._call_llm(prompt, context_text)
 
         try:
             content = llm_response["choices"][0]["message"]["content"]

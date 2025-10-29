@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.2] - 2024-06-07
+### Changed
+- El servicio de IA ahora envía el contexto histórico como mensaje `assistant` previo al usuario para simular lineamientos previos sin contaminar el prompt principal.
+- Se añadió un formateo dedicado para el bloque de contexto extendido que instruye al modelo a utilizar la información solo como referencia técnica.
+- Las pruebas de `CardAIService` se actualizaron para validar la nueva estructura de mensajes enviada al modelo.
+
 ## [0.9.1] - 2024-06-06
 ### Added
 - Botones en el historial de resultados para exportar cada `cards_ai_output` en JSON, Markdown, DOCX o HTML sin abandonar la ventana.
