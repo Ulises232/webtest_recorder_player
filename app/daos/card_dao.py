@@ -46,30 +46,44 @@ class CardDAO:
         params: List[object] = []
 
         if filters.cardType:
-            conditions.append("COALESCE(group_name, '') = %s")
+            conditions.append("COALESCE(c.group_name, '') = %s")
             params.append(filters.cardType)
         if filters.status:
-            conditions.append("COALESCE(status, '') = %s")
+            conditions.append("COALESCE(c.status, '') = %s")
             params.append(filters.status)
         if filters.startDate:
-            conditions.append("created_at >= %s")
+            conditions.append("c.created_at >= %s")
             params.append(int(filters.startDate.timestamp()))
         if filters.endDate:
-            conditions.append("created_at <= %s")
+            conditions.append("c.created_at <= %s")
             params.append(int(filters.endDate.timestamp()))
         if filters.searchText:
-            conditions.append("(title LIKE %s OR COALESCE(description,'') LIKE %s OR COALESCE(ticket_id,'') LIKE %s)")
+            conditions.append(
+                "(c.title LIKE %s OR COALESCE(c.description,'') LIKE %s OR COALESCE(c.ticket_id,'') LIKE %s)"
+            )
             like_token = f"%{filters.searchText}%"
             params.extend([like_token, like_token, like_token])
+        if filters.bestSelection is not None:
+            comparator = "EXISTS" if filters.bestSelection else "NOT EXISTS"
+            conditions.append(
+                f"{comparator} (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.is_best = 1)"
+            )
+        if filters.ddeGenerated is not None:
+            comparator = "EXISTS" if filters.ddeGenerated else "NOT EXISTS"
+            conditions.append(
+                f"{comparator} (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.dde_generated = 1)"
+            )
 
         where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
 
         sql = (
-            "SELECT TOP (%s) id, title, COALESCE(group_name, ''), COALESCE(status,''),"
-            " created_at, updated_at, COALESCE(ticket_id,''), COALESCE(branch_key,'')"
-            " FROM dbo.cards"
+            "SELECT TOP (%s) c.id, c.title, COALESCE(c.group_name, ''), COALESCE(c.status,''),"
+            " c.created_at, c.updated_at, COALESCE(c.ticket_id,''), COALESCE(c.branch_key,''),"
+            " CASE WHEN EXISTS (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.is_best = 1) THEN 1 ELSE 0 END,"
+            " CASE WHEN EXISTS (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.dde_generated = 1) THEN 1 ELSE 0 END"
+            " FROM dbo.cards c"
             f"{where_clause}"
-            " ORDER BY COALESCE(updated_at, created_at) DESC"
+            " ORDER BY COALESCE(c.updated_at, c.created_at) DESC"
         )
 
         params = [limit] + params
@@ -97,6 +111,8 @@ class CardDAO:
                     updatedAt=updated_at,
                     ticketId=str(row[6] or ""),
                     branchKey=str(row[7] or ""),
+                    hasBestSelection=bool(row[8]),
+                    hasDdeGenerated=bool(row[9]),
                 )
             )
         return cards

@@ -101,6 +101,10 @@ class FakeOutputDAO:
         self._next_id = 1
         self.deleted: List[int] = []
         self.fail_on_delete = False
+        self.fail_on_mark = False
+        self.marked_best: List[int] = []
+        self.fail_on_mark_dde = False
+        self.marked_dde: List[int] = []
 
     def create_output(
         self,
@@ -122,6 +126,8 @@ class FakeOutputDAO:
         dto.llmUsage = llm_usage
         dto.content = content
         dto.createdAt = datetime.now(timezone.utc)
+        dto.isBest = False
+        dto.ddeGenerated = False
         self.created.append(dto)
         return dto
 
@@ -135,6 +141,37 @@ class FakeOutputDAO:
             raise CardAIOutputDAOError("boom")
         self.deleted.append(output_id)
 
+    def mark_best_output(self, output_id: int):
+        """Flag the provided output identifier as the preferred one."""
+
+        if self.fail_on_mark:
+            raise CardAIOutputDAOError("boom")
+        dto = next((item for item in self.created if item.outputId == output_id), None)
+        if not dto:
+            raise CardAIOutputDAOError("missing")
+        for item in self.created:
+            item.isBest = item.outputId == output_id
+        self.marked_best.append(output_id)
+        return dto
+
+    def mark_dde_generated(self, output_id: int, generated: bool):
+        """Toggle the DDE generated flag for the provided output identifier."""
+
+        if self.fail_on_mark_dde:
+            raise CardAIOutputDAOError("boom")
+        dto = next((item for item in self.created if item.outputId == output_id), None)
+        if not dto:
+            raise CardAIOutputDAOError("missing")
+        dto.ddeGenerated = generated
+        if generated:
+            self.marked_dde.append(output_id)
+        else:
+            try:
+                self.marked_dde.remove(output_id)
+            except ValueError:
+                pass
+        return dto
+
 
 class FakeContextService:
     """Provide deterministic context snippets for the prompt builder tests."""
@@ -143,10 +180,15 @@ class FakeContextService:
         self.receivedQueries: List[str] = []
         self.contextText = "Título: Demo previo\nDescripción: Caso histórico"
         self.contextTitles = ["EA-100 Ajuste de vencimientos"]
+        self.reindexed = 0
 
     def search_context(self, query: str, limit: int = 3):
         self.receivedQueries.append(query)
         return self.contextText, self.contextTitles
+
+    def index_from_database(self, limit: int = 500):  # pragma: no cover - usado indirectamente
+        self.reindexed += 1
+        return self.reindexed
 
 
 class FakeResponse:
@@ -309,6 +351,7 @@ def test_generate_document_calls_llm_and_stores_output() -> None:
     assert result.input.inputId == fake_input.created[0]["dto"].inputId
     assert result.output.outputId == fake_output.created[0].outputId
     assert result.output.content["titulo"] == "Demo"
+    assert result.output.ddeGenerated is False
 
 
 def test_generate_document_parses_markdown_fenced_json() -> None:
@@ -503,3 +546,99 @@ def test_generate_document_fails_when_system_prompt_missing(tmp_path) -> None:
         service.generate_document(payload)
 
     assert "prompt de sistema" in str(excinfo.value)
+
+
+def test_mark_output_as_best_reindexes_context() -> None:
+    """Selecting a preferred result should update the DAO and reindex context."""
+
+    fake_input = FakeInputDAO()
+    fake_output = FakeOutputDAO()
+    context_service = FakeContextService()
+    service = CardAIService(
+        FakeCardDAO(),
+        fake_input,
+        fake_output,
+        http_post=successful_http_post,
+        context_service=context_service,
+    )
+
+    payload = CardAIRequestDTO(
+        cardId=1,
+        tipo="INCIDENCIA",
+        descripcion="Descripción",
+        analisis="",
+        recomendaciones="",
+        cosasPrevenir="",
+        infoAdicional="",
+    )
+
+    result = service.generate_document(payload)
+    updated = service.mark_output_as_best(result.output.outputId)
+
+    assert updated.isBest is True
+    assert fake_output.marked_best == [result.output.outputId]
+    assert context_service.reindexed == 1
+
+
+def test_mark_output_as_best_wraps_dao_errors() -> None:
+    """DAO failures while marking the preferred result should bubble up as service errors."""
+
+    fake_output = FakeOutputDAO()
+    fake_output.fail_on_mark = True
+    service = CardAIService(
+        FakeCardDAO(),
+        FakeInputDAO(),
+        fake_output,
+        http_post=successful_http_post,
+    )
+
+    with pytest.raises(CardAIServiceError):
+        service.mark_output_as_best(1)
+
+
+def test_set_output_dde_generated_updates_flag() -> None:
+    """Marking an output as DDE generated should delegate to the DAO."""
+
+    fake_input = FakeInputDAO()
+    fake_output = FakeOutputDAO()
+    service = CardAIService(
+        FakeCardDAO(),
+        fake_input,
+        fake_output,
+        http_post=successful_http_post,
+    )
+
+    payload = CardAIRequestDTO(
+        cardId=1,
+        tipo="INCIDENCIA",
+        descripcion="Descripción",
+        analisis="",
+        recomendaciones="",
+        cosasPrevenir="",
+        infoAdicional="",
+    )
+
+    result = service.generate_document(payload)
+    updated = service.set_output_dde_generated(result.output.outputId, True)
+
+    assert updated.ddeGenerated is True
+    assert fake_output.marked_dde == [result.output.outputId]
+
+    updated = service.set_output_dde_generated(result.output.outputId, False)
+    assert updated.ddeGenerated is False
+
+
+def test_set_output_dde_generated_wraps_dao_errors() -> None:
+    """DAO failures when toggling the DDE flag should raise service errors."""
+
+    fake_output = FakeOutputDAO()
+    fake_output.fail_on_mark_dde = True
+    service = CardAIService(
+        FakeCardDAO(),
+        FakeInputDAO(),
+        fake_output,
+        http_post=successful_http_post,
+    )
+
+    with pytest.raises(CardAIServiceError):
+        service.set_output_dde_generated(1, True)

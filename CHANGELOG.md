@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.4] - 2024-06-08
+### Added
+- Campos `is_best` y `dde_generated` en `cards_ai_outputs` con opciones desde el historial para marcar la respuesta preferida o la que generó el DDE y reflejar ambas señales en la cuadrícula principal.
+- Filtros combinados en la vista de tarjetas para localizar tarjetas con o sin mejor respuesta y con o sin DDE generada.
+- Botones en el historial para marcar una salida como mejor respuesta, indicar si generó el DDE y reindexar el contexto RAG utilizando únicamente las marcadas.
+
+### Changed
+- El contexto enviado al RAG ahora se compone exclusivamente de los resultados marcados como mejor respuesta.
+- El historial y la tabla de tarjetas destacan visualmente las salidas preferidas y las que ya cuentan con DDE generado.
+
 ## [0.9.3] - 2024-06-07
 ### Fixed
 - `CardAIService` ahora limpia los cercos de código Markdown (por ejemplo, bloques iniciados con `````json```) antes de intentar decodificar el JSON devuelto por el LLM.

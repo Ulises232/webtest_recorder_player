@@ -231,28 +231,34 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
     """Display a modal window with the generation history for a card."""
 
     try:
-        history = controller.list_history(card_id)
+        history_entries = controller.list_history(card_id)
     except RuntimeError as exc:
         messagebox.showerror("Error", str(exc))
         return
 
     win = tb.Toplevel(parent)
     win.title("Historial de generación")
-    win.geometry("820x520")
+    win.geometry("860x560")
     win.transient(parent)
     win.grab_set()
 
     frame = tb.Frame(win, padding=12)
     frame.pack(fill=BOTH, expand=YES)
 
-    columns = ("fecha", "modelo", "completitud")
+    columns = ("fecha", "modelo", "completitud", "mejor", "dde")
     tree = ttk.Treeview(frame, columns=columns, show="headings", height=12)
     tree.heading("fecha", text="Fecha")
     tree.heading("modelo", text="Modelo")
     tree.heading("completitud", text="Completitud")
+    tree.heading("mejor", text="Mejor respuesta")
+    tree.heading("dde", text="DDE generada")
     tree.column("fecha", width=180)
     tree.column("modelo", width=200)
     tree.column("completitud", width=120, anchor="center")
+    tree.column("mejor", width=140, anchor="center")
+    tree.column("dde", width=140, anchor="center")
+    tree.tag_configure("best", background="#e6f4ea")
+    tree.tag_configure("dde", background="#fff7e6")
 
     scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
     tree.configure(yscrollcommand=scrollbar.set)
@@ -297,11 +303,17 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
         detail.delete("1.0", "end")
         if not entry:
             detail.configure(state="disabled")
+            if mark_dde_button.winfo_exists():
+                mark_dde_button.configure(text="Marcar DDE generada", bootstyle=INFO)
             set_buttons_state()
             return
         pretty = json.dumps(entry.output.content, ensure_ascii=False, indent=2)
         detail.insert("1.0", pretty)
         detail.configure(state="disabled")
+        if entry.output.ddeGenerated:
+            mark_dde_button.configure(text="Quitar marca DDE", bootstyle=WARNING)
+        else:
+            mark_dde_button.configure(text="Marcar DDE generada", bootstyle=INFO)
         set_buttons_state()
 
     def export_selected_json() -> None:
@@ -339,6 +351,7 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
     def delete_selected_entry() -> None:
         """Delete the selected history entry after confirmation."""
 
+        nonlocal history_entries
         key = get_selected_key()
         entry = get_selected_entry()
         if not key or not entry:
@@ -353,18 +366,55 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
         except RuntimeError as exc:
             messagebox.showerror("Error", str(exc))
             return
-        tree.delete(key)
-        entries_map.pop(key, None)
-        detail.configure(state="normal")
-        detail.delete("1.0", "end")
-        detail.configure(state="disabled")
+        history_entries = [
+            item for item in history_entries if item.output.outputId != entry.output.outputId
+        ]
+        populate_tree(history_entries)
         messagebox.showinfo("Historial", "El resultado se eliminó correctamente.")
-        remaining = tree.get_children("")
-        if remaining:
-            tree.selection_set(remaining[0])
-            on_select(None)
+
+    def mark_selected_as_best() -> None:
+        """Mark the chosen entry as the preferred response."""
+
+        nonlocal history_entries
+        entry = get_selected_entry()
+        if not entry:
+            return
+        try:
+            controller.mark_output_as_best(entry.output.outputId)
+        except RuntimeError as exc:
+            messagebox.showerror("Error", str(exc))
+            return
+        try:
+            history_entries = controller.list_history(card_id)
+        except RuntimeError as exc:
+            messagebox.showerror("Error", str(exc))
+            return
+        populate_tree(history_entries, selected_output=entry.output.outputId)
+        messagebox.showinfo("Historial", "Se marcó la respuesta como mejor opción.")
+
+    def toggle_selected_dde() -> None:
+        """Toggle the DDE generated flag for the selected entry."""
+
+        nonlocal history_entries
+        entry = get_selected_entry()
+        if not entry:
+            return
+        target_state = not entry.output.ddeGenerated
+        try:
+            controller.mark_output_dde_generated(entry.output.outputId, target_state)
+        except RuntimeError as exc:
+            messagebox.showerror("Error", str(exc))
+            return
+        try:
+            history_entries = controller.list_history(card_id)
+        except RuntimeError as exc:
+            messagebox.showerror("Error", str(exc))
+            return
+        populate_tree(history_entries, selected_output=entry.output.outputId)
+        if target_state:
+            messagebox.showinfo("Historial", "Se marcó la salida como DDE generada.")
         else:
-            set_buttons_state()
+            messagebox.showinfo("Historial", "Se quitó la marca de DDE generada.")
 
     actions = tb.Frame(win, padding=(12, 0, 12, 12))
     actions.pack(fill=X)
@@ -409,6 +459,26 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
     export_html_button.pack(side=LEFT, padx=6)
     managed_buttons.append(export_html_button)
 
+    mark_best_button = tb.Button(
+        actions,
+        text="Marcar como mejor",
+        bootstyle=SUCCESS,
+        command=mark_selected_as_best,
+        state=tk.DISABLED,
+    )
+    mark_best_button.pack(side=RIGHT)
+    managed_buttons.append(mark_best_button)
+
+    mark_dde_button = tb.Button(
+        actions,
+        text="Marcar DDE generada",
+        bootstyle=INFO,
+        command=toggle_selected_dde,
+        state=tk.DISABLED,
+    )
+    mark_dde_button.pack(side=RIGHT, padx=(0, 6))
+    managed_buttons.append(mark_dde_button)
+
     delete_button = tb.Button(
         actions,
         text="Eliminar",
@@ -416,32 +486,55 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
         command=delete_selected_entry,
         state=tk.DISABLED,
     )
-    delete_button.pack(side=RIGHT)
+    delete_button.pack(side=RIGHT, padx=(0, 6))
     managed_buttons.append(delete_button)
 
-    set_buttons_state()
+    def populate_tree(entries: List[CardAIHistoryEntryDTO], selected_output: Optional[int] = None) -> None:
+        """Refresh the grid using the provided history collection."""
 
-    for idx, entry in enumerate(history, start=1):
-        completeness = entry.input.completenessPct if entry.input else 0
-        item_id = f"row-{idx}"
-        tree.insert(
-            "",
-            "end",
-            iid=item_id,
-            values=(
-                _format_datetime(entry.output.createdAt),
-                entry.output.llmModel or "",
-                f"{completeness}%",
-            ),
-        )
-        entries_map[item_id] = entry
+        entries_map.clear()
+        tree.delete(*tree.get_children(""))
+        selected_item: Optional[str] = None
+        for entry in entries:
+            completeness = entry.input.completenessPct if entry.input else 0
+            item_id = str(entry.output.outputId)
+            tags_list: List[str] = []
+            if entry.output.isBest:
+                tags_list.append("best")
+            if entry.output.ddeGenerated:
+                tags_list.append("dde")
+            tree.insert(
+                "",
+                "end",
+                iid=item_id,
+                values=(
+                    _format_datetime(entry.output.createdAt),
+                    entry.output.llmModel or "",
+                    f"{completeness}%",
+                    "Sí" if entry.output.isBest else "No",
+                    "Sí" if entry.output.ddeGenerated else "No",
+                ),
+                tags=tuple(tags_list),
+            )
+            entries_map[item_id] = entry
+            if selected_output and entry.output.outputId == selected_output:
+                selected_item = item_id
+
+        if selected_item:
+            tree.selection_set(selected_item)
+        elif entries:
+            first = tree.get_children("")
+            if first:
+                tree.selection_set(first[0])
+        else:
+            detail.configure(state="normal")
+            detail.delete("1.0", "end")
+            detail.configure(state="disabled")
+
+        on_select(None)
 
     tree.bind("<<TreeviewSelect>>", on_select)
-    if history:
-        first = tree.get_children("")
-        if first:
-            tree.selection_set(first[0])
-            on_select(None)
+    populate_tree(history_entries)
 
     win.wait_window()
 
@@ -807,21 +900,30 @@ def build_cards_ai_view(
 
     filters_frame.grid_columnconfigure(4, weight=1)
 
+    best_filter_var = tk.StringVar(value="Todas")
+    dde_filter_var = tk.StringVar(value="Todas")
+
     table_frame = tb.Frame(parent, padding=(12, 0))
     table_frame.pack(fill=BOTH, expand=YES)
 
-    columns = ("id", "titulo", "tipo", "status", "actualizado")
+    columns = ("id", "titulo", "tipo", "status", "actualizado", "mejor", "dde")
     tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=14)
     tree.heading("id", text="ID")
     tree.heading("titulo", text="Título")
     tree.heading("tipo", text="Tipo")
     tree.heading("status", text="Status")
     tree.heading("actualizado", text="Actualizado")
+    tree.heading("mejor", text="Mejor respuesta")
+    tree.heading("dde", text="DDE generada")
     tree.column("id", width=80, anchor="center")
     tree.column("titulo", width=360)
     tree.column("tipo", width=120)
     tree.column("status", width=120)
     tree.column("actualizado", width=160)
+    tree.column("mejor", width=140, anchor="center")
+    tree.column("dde", width=140, anchor="center")
+    tree.tag_configure("best", background="#e6f4ea")
+    tree.tag_configure("dde", background="#fff7e6")
 
     scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=tree.yview)
     tree.configure(yscrollcommand=scrollbar.set)
@@ -875,6 +977,8 @@ def build_cards_ai_view(
             "fechaInicio": _parse_date(start_var),
             "fechaFin": _parse_date(end_var),
             "busqueda": search_var.get().strip() or None,
+            "estadoMejor": best_filter_var.get(),
+            "estadoDde": dde_filter_var.get(),
         }
         try:
             cards = controller.list_cards(filters)
@@ -888,6 +992,11 @@ def build_cards_ai_view(
         history_button.configure(state=tk.DISABLED)
         tree.delete(*tree.get_children(""))
         for card in cards:
+            tags_list = []
+            if card.hasBestSelection:
+                tags_list.append("best")
+            if card.hasDdeGenerated:
+                tags_list.append("dde")
             tree.insert(
                 "",
                 "end",
@@ -898,7 +1007,10 @@ def build_cards_ai_view(
                     card.cardType,
                     card.status,
                     _format_datetime(card.updatedAt or card.createdAt),
+                    "Sí" if card.hasBestSelection else "No",
+                    "Sí" if card.hasDdeGenerated else "No",
                 ),
+                tags=tuple(tags_list),
             )
         status_label.configure(text=f"{len(cards)} tarjeta(s) encontradas.")
 
@@ -931,11 +1043,35 @@ def build_cards_ai_view(
             parent.after_cancel(debounce_id)
         debounce_id = parent.after(300, _refresh)
 
+    tb.Label(filters_frame, text="Mejor respuesta").grid(row=2, column=0, sticky="w", pady=(8, 0))
+    best_filter_box = ttk.Combobox(
+        filters_frame,
+        values=("Todas", "Con mejor respuesta", "Sin mejor respuesta"),
+        textvariable=best_filter_var,
+        state="readonly",
+        width=22,
+    )
+    best_filter_box.grid(row=3, column=0, sticky="we", padx=(0, 10))
+    best_filter_box.current(0)
+
+    tb.Label(filters_frame, text="DDE generada").grid(row=2, column=1, sticky="w", pady=(8, 0))
+    dde_filter_box = ttk.Combobox(
+        filters_frame,
+        values=("Todas", "Con DDE generada", "Sin DDE generada"),
+        textvariable=dde_filter_var,
+        state="readonly",
+        width=22,
+    )
+    dde_filter_box.grid(row=3, column=1, sticky="we", padx=(0, 10))
+    dde_filter_box.current(0)
+
     for widget in (tipo_box, status_box):
         widget.bind("<<ComboboxSelected>>", lambda *_: _refresh(), add="+")
     start_var.bind("<<DateEntrySelected>>", lambda *_: _refresh(), add="+")
     end_var.bind("<<DateEntrySelected>>", lambda *_: _refresh(), add="+")
     search_var.trace_add("write", lambda *_: _schedule_refresh())
+    best_filter_box.bind("<<ComboboxSelected>>", lambda *_: _refresh(), add="+")
+    dde_filter_box.bind("<<ComboboxSelected>>", lambda *_: _refresh(), add="+")
 
     _refresh()
 

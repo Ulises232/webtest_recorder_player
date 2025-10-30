@@ -19,6 +19,8 @@ class CardDTO:
     updatedAt: Optional[datetime]
     ticketId: str
     branchKey: str
+    hasBestSelection: bool = False
+    hasDdeGenerated: bool = False
 
 
 @dataclass
@@ -30,6 +32,8 @@ class CardFiltersDTO:
     startDate: Optional[datetime] = None
     endDate: Optional[datetime] = None
     searchText: Optional[str] = None
+    bestSelection: Optional[bool] = None
+    ddeGenerated: Optional[bool] = None
 
 
 @dataclass
@@ -62,6 +66,8 @@ class CardAIOutputDTO:
     llmUsage: Dict[str, Any]
     content: Dict[str, Any]
     createdAt: datetime
+    isBest: bool
+    ddeGenerated: bool
 
 
 @dataclass

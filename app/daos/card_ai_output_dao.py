@@ -55,10 +55,22 @@ class CardAIOutputDAO:
                         llm_model VARCHAR(100) NULL,
                         llm_usage_json NVARCHAR(MAX) NULL,
                         content_json NVARCHAR(MAX) NOT NULL,
+                        is_best BIT NOT NULL DEFAULT(0),
+                        dde_generated BIT NOT NULL DEFAULT(0),
                         created_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME()
                     );
                     CREATE INDEX ix_cards_ai_outputs_card_id
                         ON dbo.cards_ai_outputs (card_id DESC, output_id DESC);
+                END
+                IF COL_LENGTH('dbo.cards_ai_outputs', 'is_best') IS NULL
+                BEGIN
+                    ALTER TABLE dbo.cards_ai_outputs
+                        ADD is_best BIT NOT NULL DEFAULT(0);
+                END
+                IF COL_LENGTH('dbo.cards_ai_outputs', 'dde_generated') IS NULL
+                BEGIN
+                    ALTER TABLE dbo.cards_ai_outputs
+                        ADD dde_generated BIT NOT NULL DEFAULT(0);
                 END
                 """
             )
@@ -102,7 +114,7 @@ class CardAIOutputDAO:
                     "INSERT INTO dbo.cards_ai_outputs "
                     "(card_id, input_id, llm_id, llm_model, llm_usage_json, content_json) "
                     "VALUES (%s, %s, %s, %s, %s, %s);"
-                    "SELECT output_id, card_id, input_id, llm_id, llm_model, llm_usage_json, content_json, created_at "
+                    "SELECT output_id, card_id, input_id, llm_id, llm_model, llm_usage_json, content_json, is_best, dde_generated, created_at "
                     "FROM dbo.cards_ai_outputs WHERE output_id = SCOPE_IDENTITY();"
                 ),
                 (card_id, input_id, llm_id, llm_model, usage_json, content_json),
@@ -118,7 +130,7 @@ class CardAIOutputDAO:
             raise CardAIOutputDAOError("No fue posible guardar el resultado generado.") from exc
 
         connection.close()
-        created_at = row[7]
+        created_at = row[9]
         if not isinstance(created_at, datetime):
             created_at = datetime.fromisoformat(str(created_at))
         return CardAIOutputDTO(
@@ -129,6 +141,8 @@ class CardAIOutputDAO:
             llmModel=row[4],
             llmUsage=json.loads(row[5] or "{}"),
             content=json.loads(row[6] or "{}"),
+            isBest=bool(row[7]),
+            ddeGenerated=bool(row[8]),
             createdAt=created_at,
         )
 
@@ -145,7 +159,7 @@ class CardAIOutputDAO:
             cursor = connection.cursor()
             cursor.execute(
                 (
-                    "SELECT TOP (%s) output_id, card_id, input_id, llm_id, llm_model, llm_usage_json, content_json, created_at "
+                    "SELECT TOP (%s) output_id, card_id, input_id, llm_id, llm_model, llm_usage_json, content_json, is_best, dde_generated, created_at "
                     "FROM dbo.cards_ai_outputs WHERE card_id = %s ORDER BY created_at DESC, output_id DESC"
                 ),
                 (limit, card_id),
@@ -158,7 +172,7 @@ class CardAIOutputDAO:
         connection.close()
         outputs: List[CardAIOutputDTO] = []
         for row in rows:
-            created_at = row[7]
+            created_at = row[9]
             if not isinstance(created_at, datetime):
                 created_at = datetime.fromisoformat(str(created_at))
             outputs.append(
@@ -170,6 +184,8 @@ class CardAIOutputDAO:
                     llmModel=row[4],
                     llmUsage=json.loads(row[5] or "{}"),
                     content=json.loads(row[6] or "{}"),
+                    isBest=bool(row[7]),
+                    ddeGenerated=bool(row[8]),
                     createdAt=created_at,
                 )
             )
@@ -191,6 +207,7 @@ class CardAIOutputDAO:
                     "SELECT TOP (%s) o.output_id, o.card_id, COALESCE(c.title, ''), o.content_json "
                     "FROM dbo.cards_ai_outputs o "
                     "INNER JOIN dbo.cards c ON c.id = o.card_id "
+                    "WHERE o.is_best = 1 "
                     "ORDER BY o.output_id DESC"
                 ),
                 (limit,),
@@ -246,4 +263,133 @@ class CardAIOutputDAO:
 
         if affected == 0:
             raise CardAIOutputDAOError("El resultado solicitado no existe o ya fue eliminado.")
+
+    def mark_best_output(self, output_id: int) -> CardAIOutputDTO:
+        """Mark the selected output as the preferred answer for its card."""
+
+        self._ensure_schema()
+        try:
+            connection = self._connection_factory()
+        except DatabaseConnectorError as exc:  # pragma: no cover
+            raise CardAIOutputDAOError(str(exc)) from exc
+
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                "SELECT card_id FROM dbo.cards_ai_outputs WHERE output_id = %s",
+                (output_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                connection.close()
+                raise CardAIOutputDAOError("El resultado indicado no existe.")
+            card_id = int(row[0])
+
+            cursor.execute(
+                "UPDATE dbo.cards_ai_outputs SET is_best = CASE WHEN output_id = %s THEN 1 ELSE 0 END WHERE card_id = %s",
+                (output_id, card_id),
+            )
+            cursor.execute(
+                (
+                    "SELECT output_id, card_id, input_id, llm_id, llm_model, llm_usage_json, content_json, is_best, dde_generated, created_at "
+                    "FROM dbo.cards_ai_outputs WHERE output_id = %s"
+                ),
+                (output_id,),
+            )
+            updated = cursor.fetchone()
+            connection.commit()
+        except CardAIOutputDAOError:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            connection.close()
+            raise
+        except Exception as exc:  # pragma: no cover - depende del driver
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            connection.close()
+            raise CardAIOutputDAOError("No fue posible marcar el resultado como mejor respuesta.") from exc
+
+        connection.close()
+
+        if not updated:
+            raise CardAIOutputDAOError("El resultado indicado no existe.")
+
+        created_at = updated[9]
+        if not isinstance(created_at, datetime):
+            created_at = datetime.fromisoformat(str(created_at))
+        return CardAIOutputDTO(
+            outputId=int(updated[0]),
+            cardId=int(updated[1]),
+            inputId=int(updated[2]) if updated[2] is not None else None,
+            llmId=updated[3],
+            llmModel=updated[4],
+            llmUsage=json.loads(updated[5] or "{}"),
+            content=json.loads(updated[6] or "{}"),
+            isBest=bool(updated[7]),
+            ddeGenerated=bool(updated[8]),
+            createdAt=created_at,
+        )
+
+    def mark_dde_generated(self, output_id: int, generated: bool) -> CardAIOutputDTO:
+        """Toggle the flag that indicates whether the output produced a DDE."""
+
+        self._ensure_schema()
+        try:
+            connection = self._connection_factory()
+        except DatabaseConnectorError as exc:  # pragma: no cover
+            raise CardAIOutputDAOError(str(exc)) from exc
+
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                "UPDATE dbo.cards_ai_outputs SET dde_generated = %s WHERE output_id = %s",
+                (1 if generated else 0, output_id),
+            )
+            if (cursor.rowcount or 0) == 0:
+                connection.rollback()
+                connection.close()
+                raise CardAIOutputDAOError("El resultado indicado no existe.")
+            cursor.execute(
+                (
+                    "SELECT output_id, card_id, input_id, llm_id, llm_model, llm_usage_json, content_json, is_best, dde_generated, created_at "
+                    "FROM dbo.cards_ai_outputs WHERE output_id = %s"
+                ),
+                (output_id,),
+            )
+            updated = cursor.fetchone()
+            connection.commit()
+        except CardAIOutputDAOError:
+            raise
+        except Exception as exc:  # pragma: no cover - depende del driver
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            connection.close()
+            raise CardAIOutputDAOError("No fue posible actualizar la marca de DDE generada.") from exc
+
+        connection.close()
+
+        if not updated:
+            raise CardAIOutputDAOError("El resultado indicado no existe.")
+
+        created_at = updated[9]
+        if not isinstance(created_at, datetime):
+            created_at = datetime.fromisoformat(str(created_at))
+        return CardAIOutputDTO(
+            outputId=int(updated[0]),
+            cardId=int(updated[1]),
+            inputId=int(updated[2]) if updated[2] is not None else None,
+            llmId=updated[3],
+            llmModel=updated[4],
+            llmUsage=json.loads(updated[5] or "{}"),
+            content=json.loads(updated[6] or "{}"),
+            isBest=bool(updated[7]),
+            ddeGenerated=bool(updated[8]),
+            createdAt=created_at,
+        )
 
