@@ -27,13 +27,32 @@ class CardAIController:
     def list_cards(self, filters: Dict[str, object]) -> List[CardDTO]:
         """Return cards matching the filters provided by the view."""
 
+        best_selection = None
+        best_filter = (
+            str(filters.get("estadoMejor")).strip().lower() if filters.get("estadoMejor") else ""
+        )
+        if best_filter.startswith("con"):
+            best_selection = True
+        elif best_filter.startswith("sin"):
+            best_selection = False
+
+        dde_generated = None
+        dde_filter = (
+            str(filters.get("estadoDde")).strip().lower() if filters.get("estadoDde") else ""
+        )
+        if dde_filter.startswith("con"):
+            dde_generated = True
+        elif dde_filter.startswith("sin"):
+            dde_generated = False
+
         dto = CardFiltersDTO(
             cardType=str(filters.get("tipo")) if filters.get("tipo") else None,
             status=str(filters.get("status")) if filters.get("status") else None,
             startDate=filters.get("fechaInicio"),
             endDate=filters.get("fechaFin"),
             searchText=str(filters.get("busqueda")) if filters.get("busqueda") else None,
-            bestOnly=bool(filters.get("soloMejor")),
+            bestSelection=best_selection,
+            ddeGenerated=dde_generated,
         )
         try:
             return self._service.list_cards(dto)
@@ -95,6 +114,14 @@ class CardAIController:
 
         try:
             return self._service.mark_output_as_best(output_id)
+        except CardAIServiceError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+    def mark_output_dde_generated(self, output_id: int, generated: bool) -> CardAIOutputDTO:
+        """Toggle the DDE generated flag for the selected output."""
+
+        try:
+            return self._service.set_output_dde_generated(output_id, generated)
         except CardAIServiceError as exc:
             raise RuntimeError(str(exc)) from exc
 

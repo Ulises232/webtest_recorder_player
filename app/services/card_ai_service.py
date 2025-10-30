@@ -148,6 +148,14 @@ class CardAIService:
 
         return updated
 
+    def set_output_dde_generated(self, output_id: int, generated: bool) -> CardAIOutputDTO:
+        """Update the flag that tracks whether the output produced a DDE."""
+
+        try:
+            return self._output_dao.mark_dde_generated(output_id, generated)
+        except CardAIOutputDAOError as exc:
+            raise CardAIServiceError(str(exc)) from exc
+
     def save_draft(self, payload: CardAIRequestDTO) -> CardAIInputDTO:
         """Persist the provided data as draft without contacting the LLM."""
 

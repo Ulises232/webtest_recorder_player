@@ -63,9 +63,15 @@ class CardDAO:
             )
             like_token = f"%{filters.searchText}%"
             params.extend([like_token, like_token, like_token])
-        if filters.bestOnly:
+        if filters.bestSelection is not None:
+            comparator = "EXISTS" if filters.bestSelection else "NOT EXISTS"
             conditions.append(
-                "EXISTS (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.is_best = 1)"
+                f"{comparator} (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.is_best = 1)"
+            )
+        if filters.ddeGenerated is not None:
+            comparator = "EXISTS" if filters.ddeGenerated else "NOT EXISTS"
+            conditions.append(
+                f"{comparator} (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.dde_generated = 1)"
             )
 
         where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
@@ -73,7 +79,8 @@ class CardDAO:
         sql = (
             "SELECT TOP (%s) c.id, c.title, COALESCE(c.group_name, ''), COALESCE(c.status,''),"
             " c.created_at, c.updated_at, COALESCE(c.ticket_id,''), COALESCE(c.branch_key,''),"
-            " CASE WHEN EXISTS (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.is_best = 1) THEN 1 ELSE 0 END"
+            " CASE WHEN EXISTS (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.is_best = 1) THEN 1 ELSE 0 END,"
+            " CASE WHEN EXISTS (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.dde_generated = 1) THEN 1 ELSE 0 END"
             " FROM dbo.cards c"
             f"{where_clause}"
             " ORDER BY COALESCE(c.updated_at, c.created_at) DESC"
@@ -105,6 +112,7 @@ class CardDAO:
                     ticketId=str(row[6] or ""),
                     branchKey=str(row[7] or ""),
                     hasBestSelection=bool(row[8]),
+                    hasDdeGenerated=bool(row[9]),
                 )
             )
         return cards

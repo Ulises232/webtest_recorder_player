@@ -444,6 +444,7 @@ CREATE TABLE dbo.cards_ai_outputs (
     llm_usage_json NVARCHAR(MAX) NULL,
     content_json NVARCHAR(MAX) NOT NULL,
     is_best BIT NOT NULL DEFAULT(0),
+    dde_generated BIT NOT NULL DEFAULT(0),
     created_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
     CONSTRAINT fk_cards_ai_outputs_card FOREIGN KEY (card_id) REFERENCES dbo.cards(id) ON DELETE CASCADE,
     CONSTRAINT fk_cards_ai_outputs_input FOREIGN KEY (input_id) REFERENCES dbo.cards_ai_inputs(input_id) ON DELETE SET NULL
