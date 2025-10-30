@@ -8,6 +8,7 @@ from app.dtos.card_ai_dto import (
     CardAIHistoryEntryDTO,
     CardAIInputDTO,
     CardAIGenerationResultDTO,
+    CardAIOutputDTO,
     CardDTO,
     CardFiltersDTO,
     card_ai_request_from_dict,
@@ -32,6 +33,7 @@ class CardAIController:
             startDate=filters.get("fechaInicio"),
             endDate=filters.get("fechaFin"),
             searchText=str(filters.get("busqueda")) if filters.get("busqueda") else None,
+            bestOnly=bool(filters.get("soloMejor")),
         )
         try:
             return self._service.list_cards(dto)
@@ -85,6 +87,14 @@ class CardAIController:
 
         try:
             self._service.delete_output(output_id)
+        except CardAIServiceError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+    def mark_output_as_best(self, output_id: int) -> CardAIOutputDTO:
+        """Mark the selected output as the preferred document."""
+
+        try:
+            return self._service.mark_output_as_best(output_id)
         except CardAIServiceError as exc:
             raise RuntimeError(str(exc)) from exc
 

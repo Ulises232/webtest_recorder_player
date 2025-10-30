@@ -34,6 +34,7 @@ from app.dtos.card_ai_dto import (
     CardAIInputDTO,
     CardAIRequestDTO,
     CardAIGenerationResultDTO,
+    CardAIOutputDTO,
     CardDTO,
     CardFiltersDTO,
 )
@@ -130,6 +131,22 @@ class CardAIService:
             self._output_dao.delete_output(output_id)
         except CardAIOutputDAOError as exc:
             raise CardAIServiceError(str(exc)) from exc
+
+    def mark_output_as_best(self, output_id: int) -> CardAIOutputDTO:
+        """Flag an output as the preferred response for its card."""
+
+        try:
+            updated = self._output_dao.mark_best_output(output_id)
+        except CardAIOutputDAOError as exc:
+            raise CardAIServiceError(str(exc)) from exc
+
+        if self._context_service:
+            try:
+                self._context_service.index_from_database()
+            except Exception as exc:  # pragma: no cover - depende de servicios opcionales
+                logger.warning("No fue posible reindexar el contexto tras marcar favorito: %s", exc)
+
+        return updated
 
     def save_draft(self, payload: CardAIRequestDTO) -> CardAIInputDTO:
         """Persist the provided data as draft without contacting the LLM."""
