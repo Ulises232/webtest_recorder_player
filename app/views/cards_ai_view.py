@@ -187,6 +187,7 @@ def _build_html_document(content: Dict[str, object]) -> str:
         "hora_inicio": _format_html_value(content.get("hora_inicio")),
         "hora_fin": _format_html_value(content.get("hora_fin")),
         "lugar": _format_html_value(content.get("lugar")),
+        "descripcion": _format_html_value(content.get("descripcion")),
         "que_necesitas": _format_html_value(content.get("que_necesitas")),
         "para_que_lo_necesitas": _format_html_value(content.get("para_que_lo_necesitas")),
         "como_lo_necesitas": _format_html_value(content.get("como_lo_necesitas")),
