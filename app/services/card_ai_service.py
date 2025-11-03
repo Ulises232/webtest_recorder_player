@@ -547,6 +547,7 @@ class CardAIService:
             "messages": messages,
             "temperature": configuration.temperature,
             "max_tokens": configuration.maxTokens,
+            "response_format": { "type": "json_object" },
         }
 
         try:
