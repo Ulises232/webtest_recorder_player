@@ -691,6 +691,41 @@ def _open_capture_form(
         "info_adicional": tk.StringVar(value=""),
     }
 
+    provider_value_map: Dict[str, str] = {}
+    provider_options: List[str] = []
+    default_provider_key = "local"
+    try:
+        providers = controller.list_providers()
+        default_provider_key = controller.get_default_provider_key()
+    except RuntimeError as exc:
+        messagebox.showwarning(
+            "Configuración de IA",
+            f"No fue posible cargar los proveedores de IA:\n{exc}",
+        )
+        providers = []
+
+    for provider in providers:
+        label = provider.displayName or provider.providerKey
+        provider_value_map[label] = provider.providerKey
+        provider_options.append(label)
+
+    if not provider_options:
+        provider_options = ["LM Studio (Local)"]
+        provider_value_map = {provider_options[0]: "local"}
+        default_provider_key = "local"
+
+    default_provider_label = next(
+        (
+            label
+            for label, key in provider_value_map.items()
+            if key == default_provider_key
+        ),
+        provider_options[0],
+    )
+
+    provider_var = tk.StringVar(value=default_provider_label)
+    vars_data["provider"] = provider_var
+
     def _as_payload() -> Dict[str, object]:
         """Collect the current state of the form."""
 
@@ -702,6 +737,7 @@ def _open_capture_form(
             "recomendaciones": recomendaciones.get("1.0", "end").strip(),
             "cosasPrevenir": prevenir.get("1.0", "end").strip(),
             "infoAdicional": adicional.get("1.0", "end").strip(),
+            "providerKey": provider_value_map.get(provider_var.get()),
         }
 
     def _update_progress(*_args: object) -> None:
@@ -730,9 +766,24 @@ def _open_capture_form(
         font=("Segoe UI", 12, "bold"),
     ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
-    tb.Label(container, text="Tipo").grid(row=1, column=0, sticky="w")
-    tipo_box = ttk.Combobox(container, values=list(TYPE_CHOICES), textvariable=vars_data["tipo"], state="readonly")
-    tipo_box.grid(row=1, column=1, sticky="we")
+    current_row = 1
+
+    tb.Label(container, text="Proveedor de IA").grid(row=current_row, column=0, sticky="w")
+    provider_box = ttk.Combobox(
+        container,
+        values=provider_options,
+        textvariable=provider_var,
+        state="readonly",
+    )
+    provider_box.grid(row=current_row, column=1, sticky="we")
+    current_row += 1
+
+    tb.Label(container, text="Tipo").grid(row=current_row, column=0, sticky="w")
+    tipo_box = ttk.Combobox(
+        container, values=list(TYPE_CHOICES), textvariable=vars_data["tipo"], state="readonly"
+    )
+    tipo_box.grid(row=current_row, column=1, sticky="we")
+    current_row += 1
 
     descripcion = tk.Text(container, height=5, wrap="word")
     analisis = tk.Text(container, height=5, wrap="word")
@@ -747,14 +798,14 @@ def _open_capture_form(
         ("Cosas a prevenir", prevenir),
         ("Información adicional", adicional),
     ]
-    row = 2
+    row = current_row
     for label, widget in labels:
         tb.Label(container, text=label).grid(row=row, column=0, sticky="nw", pady=(8, 0))
         widget.grid(row=row, column=1, sticky="nsew", pady=(8, 0))
         row += 1
 
     container.grid_columnconfigure(1, weight=1)
-    for idx in range(2, row):
+    for idx in range(current_row, row):
         container.grid_rowconfigure(idx, weight=1)
 
     status = tk.StringVar(value="Completa los campos para mejorar el resultado.")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from app.dtos.ai_settings_dto import AIProviderRuntimeDTO
 from app.dtos.card_ai_dto import (
     CardAIHistoryEntryDTO,
     CardAIInputDTO,
@@ -56,6 +57,22 @@ class CardAIController:
         )
         try:
             return self._service.list_cards(dto)
+        except CardAIServiceError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+    def list_providers(self) -> List[AIProviderRuntimeDTO]:
+        """Expose the configured AI providers."""
+
+        try:
+            return self._service.list_providers()
+        except CardAIServiceError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+    def get_default_provider_key(self) -> str:
+        """Return the provider key selected by default."""
+
+        try:
+            return self._service.get_default_provider_key()
         except CardAIServiceError as exc:
             raise RuntimeError(str(exc)) from exc
 

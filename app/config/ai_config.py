@@ -12,7 +12,7 @@ from typing import Mapping, MutableMapping, Optional
 class AIConfiguration:
     """Resolve connection parameters for the AI generation endpoint."""
 
-    DEFAULT_URL: str = "http://127.0.0.1:1234/v1/chat/completions"
+    DEFAULT_URL: str = "http://127.0.0.1:1234/v1"
     DEFAULT_MODEL: str = "qwen/qwen2.5-vl-7b"
     DEFAULT_TEMPERATURE: float = 0.35
     DEFAULT_TOP_P: float = 0.9
@@ -29,7 +29,7 @@ class AIConfiguration:
         )
 
     def get_api_url(self) -> str:
-        """Return the base URL for the chat completions endpoint."""
+        """Return the base URL for the language model API."""
 
         return self._environ.get("LM_URL", self.DEFAULT_URL).strip() or self.DEFAULT_URL
 

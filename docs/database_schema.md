@@ -451,4 +451,26 @@ CREATE TABLE dbo.cards_ai_outputs (
 );
 
 CREATE INDEX ix_cards_ai_outputs_card_id ON dbo.cards_ai_outputs (card_id DESC, output_id DESC);
+
+CREATE TABLE dbo.ai_settings (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    active_provider VARCHAR(32) NOT NULL DEFAULT 'local',
+    temperature FLOAT NOT NULL DEFAULT 0.35,
+    max_tokens INT NOT NULL DEFAULT 10000,
+    timeout_seconds INT NOT NULL DEFAULT 180,
+    use_rag_local BIT NOT NULL DEFAULT 1,
+    updated_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+CREATE TABLE dbo.ai_providers (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    provider_key VARCHAR(32) NOT NULL UNIQUE,
+    base_url NVARCHAR(2048) NULL,
+    api_key_enc NVARCHAR(MAX) NULL,
+    org_id NVARCHAR(255) NULL,
+    model_name NVARCHAR(255) NULL,
+    extra_json NVARCHAR(MAX) NULL,
+    updated_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    favorite BIT NOT NULL DEFAULT 0
+);
 ```

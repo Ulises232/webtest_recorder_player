@@ -108,6 +108,7 @@ class CardAIRequestDTO:
     recomendaciones: Optional[str]
     cosasPrevenir: Optional[str]
     infoAdicional: Optional[str]
+    providerKey: Optional[str] = None
     forceSaveInputs: bool = False
 
 
@@ -122,6 +123,11 @@ def card_ai_request_from_dict(payload: Dict[str, Any]) -> CardAIRequestDTO:
         recomendaciones=payload.get("recomendaciones"),
         cosasPrevenir=payload.get("cosasPrevenir"),
         infoAdicional=payload.get("infoAdicional"),
+        providerKey=(
+            str(payload.get("providerKey")).strip() or None
+            if payload.get("providerKey") is not None
+            else None
+        ),
         forceSaveInputs=bool(payload.get("forceSaveInputs", False)),
     )
 
