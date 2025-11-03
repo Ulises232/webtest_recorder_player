@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.5] - 2024-06-09
+### Added
+- Cliente `DDEClient` unificado en `dde_llm_client.py` con ruteo por proveedor (OpenAI Turbo, OpenAI Mini, Mistral y endpoint local) y validaciones de JSON con reintentos y backoff.
+- Archivo `.env.example` con todas las variables necesarias para configurar el cliente universal y facilitar las pruebas locales.
+
+### Changed
+- Se añadieron las dependencias `openai` y `python-dotenv` en `requirements.txt` para soportar los nuevos proveedores y la carga opcional de variables de entorno.
+
 ## [0.9.4] - 2024-06-08
 ### Added
 - Campos `is_best` y `dde_generated` en `cards_ai_outputs` con opciones desde el historial para marcar la respuesta preferida o la que generó el DDE y reflejar ambas señales en la cuadrícula principal.
