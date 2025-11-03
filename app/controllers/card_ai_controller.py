@@ -72,8 +72,14 @@ class CardAIController:
         """Trigger a new generation and persist the resulting document."""
 
         dto = card_ai_request_from_dict(payload)
+        modo_prueba_raw = payload.get("modoPrueba")
+        modo_prueba = False
+        if isinstance(modo_prueba_raw, bool):
+            modo_prueba = modo_prueba_raw
+        elif isinstance(modo_prueba_raw, str):
+            modo_prueba = modo_prueba_raw.strip().lower() in {"true", "1", "si", "sí"}
         try:
-            return self._service.generate_document(dto)
+            return self._service.generate_document(dto, modo_prueba=modo_prueba)
         except CardAIServiceError as exc:
             raise RuntimeError(str(exc)) from exc
 

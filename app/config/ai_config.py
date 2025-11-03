@@ -1,4 +1,4 @@
-"""Configuration helper for the local language model endpoint."""
+"""Configuration helper for the OpenAI chat completions endpoint."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ from typing import Mapping, MutableMapping, Optional
 class AIConfiguration:
     """Resolve connection parameters for the AI generation endpoint."""
 
-    DEFAULT_URL: str = "http://127.0.0.1:1234/v1/chat/completions"
-    DEFAULT_MODEL: str = "qwen/qwen2.5-vl-7b"
+    DEFAULT_URL: str = "https://api.openai.com/v1/chat/completions"
+    DEFAULT_MODEL: str = "gpt-4-turbo"
     DEFAULT_TEMPERATURE: float = 0.35
     DEFAULT_TOP_P: float = 0.9
     DEFAULT_MAX_TOKENS: int = 10000
@@ -31,17 +31,17 @@ class AIConfiguration:
     def get_api_url(self) -> str:
         """Return the base URL for the chat completions endpoint."""
 
-        return self._environ.get("LM_URL", self.DEFAULT_URL).strip() or self.DEFAULT_URL
+        return self._environ.get("OPENAI_API_URL", self.DEFAULT_URL).strip() or self.DEFAULT_URL
 
     def get_model_name(self) -> str:
         """Return the model identifier provided to the LLM endpoint."""
 
-        return self._environ.get("LM_MODEL", self.DEFAULT_MODEL).strip() or self.DEFAULT_MODEL
+        return self._environ.get("OPENAI_MODEL", self.DEFAULT_MODEL).strip() or self.DEFAULT_MODEL
 
     def get_api_key(self) -> Optional[str]:
         """Expose the optional API key forwarded as bearer token."""
 
-        token = self._environ.get("LM_API_KEY", "").strip()
+        token = self._environ.get("OPENAI_API_KEY", "").strip()
         return token or None
 
     def get_temperature(self) -> float:

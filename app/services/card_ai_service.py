@@ -1,4 +1,4 @@
-"""Business logic for generating DDE/HU documents using the local LLM."""
+"""Business logic for generating DDE/HU documents using the OpenAI API."""
 
 from __future__ import annotations
 
@@ -7,23 +7,31 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional
 
-try:  # pragma: no cover - fallback for environments without requests installed
-    import requests
+try:  # pragma: no cover - permite ejecutar pruebas sin la dependencia instalada
+    from openai import APIConnectionError, APIError, APITimeoutError, BadRequestError, OpenAI, RateLimitError
 except ModuleNotFoundError:  # pragma: no cover
-    from types import SimpleNamespace
+    class APIConnectionError(RuntimeError):
+        """Fallback error when the OpenAI SDK is unavailable."""
 
-    class _RequestsFallbackError(Exception):
-        """Raised when the optional `requests` dependency is missing."""
+    class APITimeoutError(RuntimeError):
+        """Fallback error when the OpenAI SDK is unavailable."""
 
-        pass
+    class APIError(RuntimeError):
+        """Fallback error when the OpenAI SDK is unavailable."""
 
-    def _missing_post(*_args, **_kwargs):  # type: ignore[override]
-        raise _RequestsFallbackError("La dependencia 'requests' no está instalada.")
+    class BadRequestError(RuntimeError):
+        """Fallback error when the OpenAI SDK is unavailable."""
 
-    requests = SimpleNamespace(  # type: ignore[assignment]
-        RequestException=_RequestsFallbackError,
-        post=_missing_post,
-    )
+    class RateLimitError(RuntimeError):
+        """Fallback error when the OpenAI SDK is unavailable."""
+
+    class OpenAI:  # type: ignore[override]
+        """Minimal stand-in that raises informative errors when used."""
+
+        def __init__(self, *_args, **_kwargs) -> None:
+            raise RuntimeError(
+                "La dependencia 'openai' no está instalada. Añádela a tu entorno para generar DDE."
+            )
 
 from app.config.ai_config import AIConfiguration
 from app.daos.card_ai_input_dao import CardAIInputDAO, CardAIInputDAOError
@@ -59,9 +67,11 @@ class CardAIService:
         input_dao: CardAIInputDAO,
         output_dao: CardAIOutputDAO,
         configuration: Optional[AIConfiguration] = None,
-        http_post: Optional[Callable[..., requests.Response]] = None,
+        chat_completion_create: Optional[Callable[[Dict[str, object]], Dict[str, object]]] = None,
         system_prompt_loader: Optional[Callable[[], str]] = None,
         context_service: Optional["RAGContextService"] = None,
+        openai_client: Optional[OpenAI] = None,
+        client_factory: Optional[Callable[[str], OpenAI]] = None,
     ) -> None:
         """Store dependencies used by the service."""
 
@@ -69,11 +79,15 @@ class CardAIService:
         self._input_dao = input_dao
         self._output_dao = output_dao
         self._config = configuration or AIConfiguration()
-        self._http_post = http_post or requests.post
+        self._chat_completion = chat_completion_create
         self._system_prompt_loader: Callable[[], str] = (
             system_prompt_loader or self._load_system_prompt_from_file
         )
         self._context_service = context_service
+        self._openai_client = openai_client
+        self._client_factory: Callable[[str], OpenAI] = client_factory or (  # type: ignore[assignment]
+            lambda api_key: OpenAI(api_key=api_key)
+        )
 
     @staticmethod
     def calculate_completeness(payload: CardAIRequestDTO) -> int:
@@ -231,15 +245,8 @@ class CardAIService:
             "Integra la información anterior únicamente como referencia técnica; evita copiarla textualmente y prioriza la coherencia con el nuevo caso."
         )
 
-    def _call_llm(self, prompt: str, context: str = "") -> Dict[str, object]:
+    def _call_llm(self, prompt: str, context: str = "", modo_prueba: bool = False) -> Dict[str, object]:
         """Send the completion request to the configured LLM."""
-
-        headers = {"Content-Type": "application/json"}
-        token = self._config.get_api_key()
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        else:
-            headers["Authorization"] = "Bearer local"
 
         try:
             system_prompt = self._system_prompt_loader()
@@ -263,34 +270,68 @@ class CardAIService:
         messages.append({"role": "user", "content": prompt})
 
         payload = {
-            "model": self._config.get_model_name(),
+            "model": self._select_model(modo_prueba),
             "messages": messages,
             "temperature": self._config.get_temperature(),
             "top_p": self._config.get_top_p(),
             "max_tokens": self._config.get_max_tokens(),
         }
 
+        if self._chat_completion:
+            response = self._chat_completion(payload)
+        else:
+            response = self._execute_openai_completion(payload)
+
+        if not isinstance(response, dict):
+            raise CardAIServiceError("La respuesta del modelo no contiene contenido utilizable.")
+
+        return response
+
+    def _select_model(self, modo_prueba: bool) -> str:
+        """Resolve the OpenAI model identifier based on the requested mode."""
+
+        if modo_prueba:
+            return "gpt-4o-mini"
+        configured = (self._config.get_model_name() or "").strip()
+        if configured and configured != "gpt-4o-mini":
+            return configured
+        return "gpt-4-turbo"
+
+    def _execute_openai_completion(self, payload: Dict[str, object]) -> Dict[str, object]:
+        """Invoke the OpenAI client and return the response payload."""
+
+        client = self._ensure_openai_client()
         try:
-            response = self._http_post(
-                self._config.get_api_url(),
-                headers=headers,
-                json=payload,
-                timeout=180000,
-            )
-        except requests.RequestException as exc:
+            completion = client.chat.completions.create(timeout=180, **payload)
+        except (APITimeoutError, APIConnectionError) as exc:
             raise CardAIServiceError(f"No fue posible contactar al modelo: {exc}") from exc
+        except RateLimitError as exc:
+            raise CardAIServiceError("La API de OpenAI alcanzó el límite de peticiones permitido.") from exc
+        except BadRequestError as exc:
+            raise CardAIServiceError("La solicitud enviada a OpenAI es inválida o está incompleta.") from exc
+        except APIError as exc:
+            raise CardAIServiceError(f"OpenAI devolvió un error: {exc}") from exc
 
-        if not response.ok:
+        return completion.model_dump()
+
+    def _ensure_openai_client(self) -> OpenAI:
+        """Instantiate the OpenAI client using the configured API key."""
+
+        if self._openai_client is not None:
+            return self._openai_client
+
+        api_key = self._config.get_api_key()
+        if not api_key:
             raise CardAIServiceError(
-                f"Error del modelo {response.status_code}: {response.text.strip()[:200]}"
+                "Configura la variable OPENAI_API_KEY para utilizar el generador de DDE."
             )
 
-        try:
-            return response.json()
-        except ValueError as exc:
-            raise CardAIServiceError("La respuesta del modelo no es JSON válido.") from exc
+        self._openai_client = self._client_factory(api_key)
+        return self._openai_client
 
-    def generate_document(self, payload: CardAIRequestDTO) -> CardAIGenerationResultDTO:
+    def generate_document(
+        self, payload: CardAIRequestDTO, modo_prueba: bool = False
+    ) -> CardAIGenerationResultDTO:
         """Persist the prompt, invoke the LLM and store the resulting JSON."""
 
         try:
@@ -331,7 +372,7 @@ class CardAIService:
                     context_text, context_titles = self._context_service.search_context(query)
                 except Exception as exc:  # pragma: no cover - depende de librerías opcionales
                     logger.warning("No fue posible recuperar contexto previo: %s", exc)
-        llm_response = self._call_llm(prompt, context_text)
+        llm_response = self._call_llm(prompt, context_text, modo_prueba=modo_prueba)
 
         try:
             content = llm_response["choices"][0]["message"]["content"]
@@ -381,7 +422,9 @@ class CardAIService:
                 cleaned = cleaned[:-3]
         return cleaned.strip()
 
-    def regenerate_from_input(self, input_id: int) -> CardAIGenerationResultDTO:
+    def regenerate_from_input(
+        self, input_id: int, modo_prueba: bool = False
+    ) -> CardAIGenerationResultDTO:
         """Trigger a new generation using the stored input fields."""
 
         try:
@@ -402,7 +445,7 @@ class CardAIService:
             infoAdicional=input_dto.infoAdicional,
             forceSaveInputs=True,
         )
-        return self.generate_document(payload)
+        return self.generate_document(payload, modo_prueba=modo_prueba)
 
     def _load_system_prompt_from_file(self) -> str:
         """Read the corporate system prompt from the configured file path."""

@@ -191,63 +191,46 @@ class FakeContextService:
         return self.reindexed
 
 
-class FakeResponse:
-    """Minimal requests.Response stand-in used for the LLM client."""
-
-    def __init__(self, payload: dict, status_code: int = 200) -> None:
-        self._payload = payload
-        self.status_code = status_code
-        self.ok = status_code == 200
-        self.text = json.dumps(payload)
-
-    def json(self) -> dict:
-        return self._payload
-
-
-def successful_http_post(*_args, **_kwargs) -> FakeResponse:
+def successful_chat_completion(_payload: Dict[str, object]) -> Dict[str, object]:
     """Return a fake response mimicking a successful completion."""
 
-    return FakeResponse(
-        {
-            "id": "chatcmpl-1",
-            "model": "qwen/qwen2.5-vl-7b",
-            "choices": [
-                {
-                    "message": {
-                        "role": "assistant",
-                        "content": json.dumps({"titulo": "Demo", "requerimientos_funcionales": []}),
-                    }
+    return {
+        "id": "chatcmpl-1",
+        "model": "gpt-4-turbo",
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": json.dumps({"titulo": "Demo", "requerimientos_funcionales": []}),
                 }
-            ],
-            "usage": {"total_tokens": 10},
-        }
-    )
+            }
+        ],
+        "usage": {"total_tokens": 10},
+    }
 
 
-def codeblock_http_post(*_args, **_kwargs) -> FakeResponse:
+def codeblock_chat_completion(_payload: Dict[str, object]) -> Dict[str, object]:
     """Return a fake response wrapping the JSON output in markdown fences."""
 
-    return FakeResponse(
-        {
-            "id": "chatcmpl-2",
-            "model": "qwen/qwen2.5-vl-7b",
-            "choices": [
-                {
-                    "message": {
-                        "role": "assistant",
-                        "content": "```json\n{\n  \"titulo\": \"Demo cercado\"\n}\n```",
-                    }
+    return {
+        "id": "chatcmpl-2",
+        "model": "gpt-4-turbo",
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "```json\n{\n  \"titulo\": \"Demo cercado\"\n}\n```",
                 }
-            ],
-            "usage": {"total_tokens": 12},
-        }
-    )
+            }
+        ],
+        "usage": {"total_tokens": 12},
+    }
 
 
-def failing_http_post(*_args, **_kwargs) -> FakeResponse:
-    """Return a fake response indicating a server failure."""
+def failing_chat_completion(_payload: Dict[str, object]) -> Dict[str, object]:
+    """Simulate an error returned by the OpenAI client."""
 
-    return FakeResponse({}, status_code=500)
+    raise CardAIServiceError("boom")
 
 
 def test_calculate_completeness_counts_non_empty_fields() -> None:
@@ -257,7 +240,7 @@ def test_calculate_completeness_counts_non_empty_fields() -> None:
         FakeCardDAO(),
         FakeInputDAO(),
         FakeOutputDAO(),
-        http_post=successful_http_post,
+        chat_completion_create=successful_chat_completion,
     )
     payload = CardAIRequestDTO(
         cardId=1,
@@ -279,7 +262,7 @@ def test_delete_output_delegates_to_dao() -> None:
         FakeCardDAO(),
         FakeInputDAO(),
         fake_output,
-        http_post=successful_http_post,
+        chat_completion_create=successful_chat_completion,
     )
 
     service.delete_output(42)
@@ -296,7 +279,7 @@ def test_delete_output_wraps_dao_errors() -> None:
         FakeCardDAO(),
         FakeInputDAO(),
         fake_output,
-        http_post=successful_http_post,
+        chat_completion_create=successful_chat_completion,
     )
 
     with pytest.raises(CardAIServiceError):
@@ -311,7 +294,7 @@ def test_save_draft_persists_input_and_marks_as_draft() -> None:
         FakeCardDAO(),
         fake_input,
         FakeOutputDAO(),
-        http_post=successful_http_post,
+        chat_completion_create=successful_chat_completion,
     )
     payload = CardAIRequestDTO(
         cardId=1,
@@ -336,7 +319,7 @@ def test_generate_document_calls_llm_and_stores_output() -> None:
         FakeCardDAO(),
         fake_input,
         fake_output,
-        http_post=successful_http_post,
+        chat_completion_create=successful_chat_completion,
     )
     payload = CardAIRequestDTO(
         cardId=1,
@@ -363,7 +346,7 @@ def test_generate_document_parses_markdown_fenced_json() -> None:
         FakeCardDAO(),
         fake_input,
         fake_output,
-        http_post=codeblock_http_post,
+        chat_completion_create=codeblock_chat_completion,
     )
     payload = CardAIRequestDTO(
         cardId=1,
@@ -385,7 +368,7 @@ def test_generate_document_handles_llm_errors() -> None:
         FakeCardDAO(),
         FakeInputDAO(),
         FakeOutputDAO(),
-        http_post=failing_http_post,
+        chat_completion_create=failing_chat_completion,
     )
     payload = CardAIRequestDTO(
         cardId=1,
@@ -405,15 +388,15 @@ def test_generate_document_sends_system_prompt_first() -> None:
 
     captured: Dict[str, object] = {}
 
-    def capturing_http_post(*_args, **kwargs) -> FakeResponse:
-        captured["payload"] = kwargs.get("json")
-        return successful_http_post()
+    def capturing_chat_completion(payload: Dict[str, object]) -> Dict[str, object]:
+        captured["payload"] = payload
+        return successful_chat_completion(payload)
 
     service = CardAIService(
         FakeCardDAO(),
         FakeInputDAO(),
         FakeOutputDAO(),
-        http_post=capturing_http_post,
+        chat_completion_create=capturing_chat_completion,
     )
     payload = CardAIRequestDTO(
         cardId=1,
@@ -441,9 +424,9 @@ def test_generate_document_injects_retrieved_context() -> None:
 
     captured: Dict[str, object] = {}
 
-    def capturing_http_post(*_args, **kwargs) -> FakeResponse:
-        captured["payload"] = kwargs.get("json")
-        return successful_http_post()
+    def capturing_chat_completion(payload: Dict[str, object]) -> Dict[str, object]:
+        captured["payload"] = payload
+        return successful_chat_completion(payload)
 
     fake_input = FakeInputDAO()
     fake_output = FakeOutputDAO()
@@ -452,7 +435,7 @@ def test_generate_document_injects_retrieved_context() -> None:
         FakeCardDAO(),
         fake_input,
         fake_output,
-        http_post=capturing_http_post,
+        chat_completion_create=capturing_chat_completion,
         context_service=context_service,
     )
 
@@ -480,6 +463,37 @@ def test_generate_document_injects_retrieved_context() -> None:
     assert result.output.content["usados_como_contexto"] == context_service.contextTitles
 
 
+def test_generate_document_uses_test_model_when_requested() -> None:
+    """The service must select gpt-4o-mini when running in test mode."""
+
+    captured: Dict[str, object] = {}
+
+    def capturing_chat_completion(payload: Dict[str, object]) -> Dict[str, object]:
+        captured["model"] = payload["model"]
+        return successful_chat_completion(payload)
+
+    service = CardAIService(
+        FakeCardDAO(),
+        FakeInputDAO(),
+        FakeOutputDAO(),
+        chat_completion_create=capturing_chat_completion,
+    )
+
+    payload = CardAIRequestDTO(
+        cardId=1,
+        tipo="INCIDENCIA",
+        descripcion="Descripción",
+        analisis="",
+        recomendaciones="",
+        cosasPrevenir="",
+        infoAdicional="",
+    )
+
+    service.generate_document(payload, modo_prueba=True)
+
+    assert captured.get("model") == "gpt-4o-mini"
+
+
 def test_generate_document_uses_custom_system_prompt_file(tmp_path) -> None:
     """The loader must read the prompt content from the configured file path."""
 
@@ -488,9 +502,9 @@ def test_generate_document_uses_custom_system_prompt_file(tmp_path) -> None:
 
     captured: Dict[str, object] = {}
 
-    def capturing_http_post(*_args, **kwargs) -> FakeResponse:
-        captured["payload"] = kwargs.get("json")
-        return successful_http_post()
+    def capturing_chat_completion(payload: Dict[str, object]) -> Dict[str, object]:
+        captured["payload"] = payload
+        return successful_chat_completion(payload)
 
     config = AIConfiguration({"LM_SYSTEM_PROMPT_PATH": str(prompt_file)})
     service = CardAIService(
@@ -498,7 +512,7 @@ def test_generate_document_uses_custom_system_prompt_file(tmp_path) -> None:
         FakeInputDAO(),
         FakeOutputDAO(),
         configuration=config,
-        http_post=capturing_http_post,
+        chat_completion_create=capturing_chat_completion,
     )
 
     payload = CardAIRequestDTO(
@@ -529,7 +543,7 @@ def test_generate_document_fails_when_system_prompt_missing(tmp_path) -> None:
         FakeInputDAO(),
         FakeOutputDAO(),
         configuration=config,
-        http_post=successful_http_post,
+        chat_completion_create=successful_chat_completion,
     )
 
     payload = CardAIRequestDTO(
@@ -558,7 +572,7 @@ def test_mark_output_as_best_reindexes_context() -> None:
         FakeCardDAO(),
         fake_input,
         fake_output,
-        http_post=successful_http_post,
+        chat_completion_create=successful_chat_completion,
         context_service=context_service,
     )
 
@@ -589,7 +603,7 @@ def test_mark_output_as_best_wraps_dao_errors() -> None:
         FakeCardDAO(),
         FakeInputDAO(),
         fake_output,
-        http_post=successful_http_post,
+        chat_completion_create=successful_chat_completion,
     )
 
     with pytest.raises(CardAIServiceError):
@@ -605,7 +619,7 @@ def test_set_output_dde_generated_updates_flag() -> None:
         FakeCardDAO(),
         fake_input,
         fake_output,
-        http_post=successful_http_post,
+        chat_completion_create=successful_chat_completion,
     )
 
     payload = CardAIRequestDTO(
@@ -637,7 +651,7 @@ def test_set_output_dde_generated_wraps_dao_errors() -> None:
         FakeCardDAO(),
         FakeInputDAO(),
         fake_output,
-        http_post=successful_http_post,
+        chat_completion_create=successful_chat_completion,
     )
 
     with pytest.raises(CardAIServiceError):

@@ -1,5 +1,13 @@
 # Changelog
 
+# [0.10.0] - 2024-06-09
+### Changed
+- `CardAIService` ahora consume la API oficial de OpenAI con selección de modelo `gpt-4o-mini`/`gpt-4-turbo` vía `modo_prueba` y maneja los errores de red y límites con excepciones claras.
+- Se actualizaron las pruebas unitarias para stubear las llamadas a OpenAI y validar el modelo seleccionado en modo de prueba.
+
+### Added
+- Cliente `generar_dde` basado en `openai` que construye el prompt YAML corporativo, valida el JSON de salida y ofrece ejemplo de uso.
+
 ## [0.9.4] - 2024-06-08
 ### Added
 - Campos `is_best` y `dde_generated` en `cards_ai_outputs` con opciones desde el historial para marcar la respuesta preferida o la que generó el DDE y reflejar ambas señales en la cuadrícula principal.
