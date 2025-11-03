@@ -8,6 +8,7 @@
 
 ### Added
 - Cliente `generar_dde` basado en `openai` que construye el prompt YAML corporativo, valida el JSON de salida y ofrece ejemplo de uso.
+- Archivo `.env.test.example` con valores de referencia para configurar las variables de entorno requeridas durante las pruebas locales.
 
 ## [0.9.4] - 2024-06-08
 ### Added
