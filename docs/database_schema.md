@@ -451,4 +451,47 @@ CREATE TABLE dbo.cards_ai_outputs (
 );
 
 CREATE INDEX ix_cards_ai_outputs_card_id ON dbo.cards_ai_outputs (card_id DESC, output_id DESC);
+
+CREATE TABLE dbo.ai_settings (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    active_provider VARCHAR(32) NOT NULL DEFAULT 'local',
+    temperature FLOAT NOT NULL DEFAULT 0.35,
+    max_tokens INT NOT NULL DEFAULT 10000,
+    timeout_seconds INT NOT NULL DEFAULT 180,
+    use_rag_local BIT NOT NULL DEFAULT 1,
+    updated_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+CREATE TABLE dbo.ai_providers (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    provider_key VARCHAR(32) NOT NULL UNIQUE,
+    base_url NVARCHAR(2048) NULL,
+    api_key_enc NVARCHAR(MAX) NULL,
+    org_id NVARCHAR(255) NULL,
+    model_name NVARCHAR(255) NULL,
+    extra_json NVARCHAR(MAX) NULL,
+    updated_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    favorite BIT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE dbo.ai_request_logs (
+    log_id BIGINT IDENTITY(1,1) PRIMARY KEY,
+    card_id BIGINT NULL,
+    input_id BIGINT NULL,
+    provider_key VARCHAR(32) NOT NULL,
+    model_name NVARCHAR(255) NULL,
+    request_payload NVARCHAR(MAX) NOT NULL,
+    response_payload NVARCHAR(MAX) NULL,
+    response_content NVARCHAR(MAX) NULL,
+    is_valid_json BIT NOT NULL DEFAULT 0,
+    error_message NVARCHAR(1024) NULL,
+    created_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT fk_ai_request_logs_card FOREIGN KEY (card_id)
+        REFERENCES dbo.cards(id) ON DELETE SET NULL,
+    CONSTRAINT fk_ai_request_logs_input FOREIGN KEY (input_id)
+        REFERENCES dbo.cards_ai_inputs(input_id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_ai_request_logs_created_at
+    ON dbo.ai_request_logs (created_at DESC, log_id DESC);
 ```

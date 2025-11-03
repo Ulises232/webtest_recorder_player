@@ -1,6 +1,6 @@
 import json
 from datetime import datetime, timezone
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pytest
 
@@ -10,7 +10,9 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from app.config.ai_config import AIConfiguration
+from app.daos.ai_request_log_dao import AIRequestLogDAOError
 from app.daos.card_ai_output_dao import CardAIOutputDAOError
+from app.dtos.ai_settings_dto import AIProviderRuntimeDTO, ResolvedAIConfigurationDTO
 from app.dtos.card_ai_dto import CardAIRequestDTO, CardDTO, CardFiltersDTO
 from app.services.card_ai_service import CardAIService, CardAIServiceError
 
@@ -173,6 +175,54 @@ class FakeOutputDAO:
         return dto
 
 
+class FakeRequestLogDAO:
+    """Capture request/response audit entries for assertions."""
+
+    def __init__(self) -> None:
+        self.created: List[Dict[str, object]] = []
+        self.fail = False
+
+    def create_log(
+        self,
+        card_id: Optional[int],
+        input_id: Optional[int],
+        provider_key: str,
+        model_name: Optional[str],
+        request_payload: str,
+        response_payload: Optional[str],
+        response_content: Optional[str],
+        is_valid_json: bool,
+        error_message: Optional[str],
+    ):
+        if self.fail:
+            raise AIRequestLogDAOError("boom")
+        entry = {
+            "card_id": card_id,
+            "input_id": input_id,
+            "provider_key": provider_key,
+            "model_name": model_name,
+            "request_payload": request_payload,
+            "response_payload": response_payload,
+            "response_content": response_content,
+            "is_valid_json": is_valid_json,
+            "error_message": error_message,
+        }
+        self.created.append(entry)
+        dto = type("LogDTO", (), {})()
+        dto.logId = len(self.created)
+        dto.cardId = card_id
+        dto.inputId = input_id
+        dto.providerKey = provider_key
+        dto.modelName = model_name
+        dto.requestPayload = request_payload
+        dto.responsePayload = response_payload
+        dto.responseContent = response_content
+        dto.isValidJson = is_valid_json
+        dto.errorMessage = error_message
+        dto.createdAt = datetime.now(timezone.utc)
+        return dto
+
+
 class FakeContextService:
     """Provide deterministic context snippets for the prompt builder tests."""
 
@@ -189,6 +239,60 @@ class FakeContextService:
     def index_from_database(self, limit: int = 500):  # pragma: no cover - usado indirectamente
         self.reindexed += 1
         return self.reindexed
+
+
+class FakeAIConfigurationService:
+    """Provide deterministic provider settings for the service tests."""
+
+    def __init__(
+        self,
+        provider_key: str = "local",
+        base_url: str = "http://127.0.0.1:1234/v1",
+        use_rag_local: bool = True,
+        api_key: Optional[str] = None,
+    ) -> None:
+        display_name = "Proveedor de prueba"
+        self._providers = [
+            AIProviderRuntimeDTO(
+                providerKey=provider_key,
+                displayName=display_name,
+                baseUrl=base_url,
+                apiKey=api_key,
+                orgId=None,
+                modelName="qwen/qwen2.5-vl-7b",
+                extra={},
+                favorite=True,
+            )
+        ]
+        self._resolved = ResolvedAIConfigurationDTO(
+            providerKey=provider_key,
+            displayName=display_name,
+            baseUrl=base_url,
+            apiKey=api_key,
+            orgId=None,
+            modelName="qwen/qwen2.5-vl-7b",
+            temperature=0.35,
+            topP=0.9,
+            maxTokens=10000,
+            timeoutSeconds=180,
+            useRagLocal=use_rag_local,
+            extra={},
+        )
+
+    def resolve_configuration(self, selected_provider: Optional[str] = None) -> ResolvedAIConfigurationDTO:
+        """Return the resolved configuration ignoring the requested key."""
+
+        return self._resolved
+
+    def list_providers(self) -> List[AIProviderRuntimeDTO]:
+        """Return the available providers."""
+
+        return list(self._providers)
+
+    def get_default_provider_key(self) -> str:
+        """Expose the favorite provider key."""
+
+        return self._providers[0].providerKey
 
 
 class FakeResponse:
@@ -257,6 +361,8 @@ def test_calculate_completeness_counts_non_empty_fields() -> None:
         FakeCardDAO(),
         FakeInputDAO(),
         FakeOutputDAO(),
+        FakeRequestLogDAO(),
+        FakeAIConfigurationService(),
         http_post=successful_http_post,
     )
     payload = CardAIRequestDTO(
@@ -279,6 +385,8 @@ def test_delete_output_delegates_to_dao() -> None:
         FakeCardDAO(),
         FakeInputDAO(),
         fake_output,
+        FakeRequestLogDAO(),
+        FakeAIConfigurationService(),
         http_post=successful_http_post,
     )
 
@@ -296,6 +404,8 @@ def test_delete_output_wraps_dao_errors() -> None:
         FakeCardDAO(),
         FakeInputDAO(),
         fake_output,
+        FakeRequestLogDAO(),
+        FakeAIConfigurationService(),
         http_post=successful_http_post,
     )
 
@@ -311,6 +421,8 @@ def test_save_draft_persists_input_and_marks_as_draft() -> None:
         FakeCardDAO(),
         fake_input,
         FakeOutputDAO(),
+        FakeRequestLogDAO(),
+        FakeAIConfigurationService(),
         http_post=successful_http_post,
     )
     payload = CardAIRequestDTO(
@@ -332,10 +444,13 @@ def test_generate_document_calls_llm_and_stores_output() -> None:
 
     fake_input = FakeInputDAO()
     fake_output = FakeOutputDAO()
+    fake_logs = FakeRequestLogDAO()
     service = CardAIService(
         FakeCardDAO(),
         fake_input,
         fake_output,
+        fake_logs,
+        FakeAIConfigurationService(),
         http_post=successful_http_post,
     )
     payload = CardAIRequestDTO(
@@ -352,6 +467,9 @@ def test_generate_document_calls_llm_and_stores_output() -> None:
     assert result.output.outputId == fake_output.created[0].outputId
     assert result.output.content["titulo"] == "Demo"
     assert result.output.ddeGenerated is False
+    assert len(fake_logs.created) == 1
+    assert fake_logs.created[0]["is_valid_json"] is True
+    assert json.loads(fake_logs.created[0]["response_payload"])["id"] == "chatcmpl-1"
 
 
 def test_generate_document_parses_markdown_fenced_json() -> None:
@@ -359,10 +477,13 @@ def test_generate_document_parses_markdown_fenced_json() -> None:
 
     fake_input = FakeInputDAO()
     fake_output = FakeOutputDAO()
+    fake_logs = FakeRequestLogDAO()
     service = CardAIService(
         FakeCardDAO(),
         fake_input,
         fake_output,
+        fake_logs,
+        FakeAIConfigurationService(),
         http_post=codeblock_http_post,
     )
     payload = CardAIRequestDTO(
@@ -376,15 +497,19 @@ def test_generate_document_parses_markdown_fenced_json() -> None:
     )
     result = service.generate_document(payload)
     assert result.output.content["titulo"] == "Demo cercado"
+    assert fake_logs.created[0]["response_content"].startswith("{")
 
 
 def test_generate_document_handles_llm_errors() -> None:
     """Non-200 responses from the LLM should raise a service error."""
 
+    fake_logs = FakeRequestLogDAO()
     service = CardAIService(
         FakeCardDAO(),
         FakeInputDAO(),
         FakeOutputDAO(),
+        fake_logs,
+        FakeAIConfigurationService(),
         http_post=failing_http_post,
     )
     payload = CardAIRequestDTO(
@@ -399,6 +524,40 @@ def test_generate_document_handles_llm_errors() -> None:
     with pytest.raises(CardAIServiceError):
         service.generate_document(payload)
 
+    assert fake_logs.created[0]["is_valid_json"] is False
+    assert "Error del modelo" in fake_logs.created[0]["error_message"]
+
+
+def test_generate_document_continues_when_log_persist_fails() -> None:
+    """Failures while storing the audit entry should not block the workflow."""
+
+    fake_input = FakeInputDAO()
+    fake_output = FakeOutputDAO()
+    fake_logs = FakeRequestLogDAO()
+    fake_logs.fail = True
+    service = CardAIService(
+        FakeCardDAO(),
+        fake_input,
+        fake_output,
+        fake_logs,
+        FakeAIConfigurationService(),
+        http_post=successful_http_post,
+    )
+    payload = CardAIRequestDTO(
+        cardId=1,
+        tipo="INCIDENCIA",
+        descripcion="Descripción",
+        analisis="",
+        recomendaciones="",
+        cosasPrevenir="",
+        infoAdicional="",
+    )
+
+    result = service.generate_document(payload)
+
+    assert result.output.content["titulo"] == "Demo"
+    assert fake_output.created
+
 
 def test_generate_document_sends_system_prompt_first() -> None:
     """The LLM request must prepend the corporate system prompt before user content."""
@@ -409,10 +568,13 @@ def test_generate_document_sends_system_prompt_first() -> None:
         captured["payload"] = kwargs.get("json")
         return successful_http_post()
 
+    fake_logs = FakeRequestLogDAO()
     service = CardAIService(
         FakeCardDAO(),
         FakeInputDAO(),
         FakeOutputDAO(),
+        fake_logs,
+        FakeAIConfigurationService(),
         http_post=capturing_http_post,
     )
     payload = CardAIRequestDTO(
@@ -434,6 +596,8 @@ def test_generate_document_sends_system_prompt_first() -> None:
     assert messages[0]["content"] == DEFAULT_SYSTEM_PROMPT
     assert messages[1]["role"] == "user"
     assert "Genera un documento formal" in messages[1]["content"]
+    request_logged = json.loads(fake_logs.created[0]["request_payload"])
+    assert request_logged["messages"][0]["content"] == DEFAULT_SYSTEM_PROMPT
 
 
 def test_generate_document_injects_retrieved_context() -> None:
@@ -448,10 +612,13 @@ def test_generate_document_injects_retrieved_context() -> None:
     fake_input = FakeInputDAO()
     fake_output = FakeOutputDAO()
     context_service = FakeContextService()
+    fake_logs = FakeRequestLogDAO()
     service = CardAIService(
         FakeCardDAO(),
         fake_input,
         fake_output,
+        fake_logs,
+        FakeAIConfigurationService(),
         http_post=capturing_http_post,
         context_service=context_service,
     )
@@ -478,6 +645,82 @@ def test_generate_document_injects_retrieved_context() -> None:
     assert messages[2]["role"] == "user"
     assert context_service.receivedQueries[0].startswith("EA-172")
     assert result.output.content["usados_como_contexto"] == context_service.contextTitles
+    log_entry = json.loads(fake_logs.created[0]["request_payload"])
+    assert log_entry["contextTitles"] == context_service.contextTitles
+
+
+def test_generate_document_uses_openai_factory_when_provider_remote() -> None:
+    """Remote providers should rely on the injected OpenAI client factory."""
+
+    captured: Dict[str, object] = {}
+
+    def fake_factory(api_key: str, base_url: Optional[str], org_id: Optional[str], timeout: int) -> object:
+        captured["factory_args"] = (api_key, base_url, org_id, timeout)
+
+        class _Completions:
+            @staticmethod
+            def create(**kwargs: object) -> Dict[str, object]:
+                captured["openai_payload"] = kwargs
+                return {
+                    "id": "chatcmpl-openai",
+                    "model": "gpt-4o-mini",
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": json.dumps({"titulo": "OpenAI"}),
+                            }
+                        }
+                    ],
+                    "usage": {"total_tokens": 42},
+                }
+
+        class _Chat:
+            completions = _Completions()
+
+        class _Client:
+            chat = _Chat()
+
+        return _Client()
+
+    config_service = FakeAIConfigurationService(
+        provider_key="openai_mini",
+        base_url=None,
+        use_rag_local=False,
+        api_key="sk-test",
+    )
+    fake_input = FakeInputDAO()
+    fake_output = FakeOutputDAO()
+    fake_logs = FakeRequestLogDAO()
+    context_service = FakeContextService()
+    service = CardAIService(
+        FakeCardDAO(),
+        fake_input,
+        fake_output,
+        fake_logs,
+        config_service,
+        context_service=context_service,
+        openai_client_factory=fake_factory,
+    )
+
+    payload = CardAIRequestDTO(
+        cardId=1,
+        tipo="INCIDENCIA",
+        descripcion="Descripción",
+        analisis="",
+        recomendaciones="",
+        cosasPrevenir="",
+        infoAdicional="",
+        providerKey="openai_mini",
+    )
+
+    result = service.generate_document(payload)
+
+    assert captured["factory_args"] == ("sk-test", None, None, 180)
+    assert "messages" in captured["openai_payload"]
+    assert context_service.receivedQueries == []
+    assert "usados_como_contexto" not in result.output.content
+    assert json.loads(fake_logs.created[0]["request_payload"])["providerKey"] == "openai_mini"
 
 
 def test_generate_document_uses_custom_system_prompt_file(tmp_path) -> None:
@@ -497,6 +740,8 @@ def test_generate_document_uses_custom_system_prompt_file(tmp_path) -> None:
         FakeCardDAO(),
         FakeInputDAO(),
         FakeOutputDAO(),
+        FakeRequestLogDAO(),
+        FakeAIConfigurationService(),
         configuration=config,
         http_post=capturing_http_post,
     )
@@ -528,6 +773,8 @@ def test_generate_document_fails_when_system_prompt_missing(tmp_path) -> None:
         FakeCardDAO(),
         FakeInputDAO(),
         FakeOutputDAO(),
+        FakeRequestLogDAO(),
+        FakeAIConfigurationService(),
         configuration=config,
         http_post=successful_http_post,
     )
@@ -554,10 +801,13 @@ def test_mark_output_as_best_reindexes_context() -> None:
     fake_input = FakeInputDAO()
     fake_output = FakeOutputDAO()
     context_service = FakeContextService()
+    fake_logs = FakeRequestLogDAO()
     service = CardAIService(
         FakeCardDAO(),
         fake_input,
         fake_output,
+        fake_logs,
+        FakeAIConfigurationService(),
         http_post=successful_http_post,
         context_service=context_service,
     )
@@ -589,6 +839,8 @@ def test_mark_output_as_best_wraps_dao_errors() -> None:
         FakeCardDAO(),
         FakeInputDAO(),
         fake_output,
+        FakeRequestLogDAO(),
+        FakeAIConfigurationService(),
         http_post=successful_http_post,
     )
 
@@ -601,10 +853,13 @@ def test_set_output_dde_generated_updates_flag() -> None:
 
     fake_input = FakeInputDAO()
     fake_output = FakeOutputDAO()
+    fake_logs = FakeRequestLogDAO()
     service = CardAIService(
         FakeCardDAO(),
         fake_input,
         fake_output,
+        fake_logs,
+        FakeAIConfigurationService(),
         http_post=successful_http_post,
     )
 
@@ -637,6 +892,8 @@ def test_set_output_dde_generated_wraps_dao_errors() -> None:
         FakeCardDAO(),
         FakeInputDAO(),
         fake_output,
+        FakeRequestLogDAO(),
+        FakeAIConfigurationService(),
         http_post=successful_http_post,
     )
 

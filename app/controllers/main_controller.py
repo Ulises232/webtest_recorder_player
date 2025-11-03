@@ -17,6 +17,9 @@ from app.controllers.naming_controller import NamingController
 from app.controllers.session_controller import SessionController
 from app.daos.database import DatabaseConnector
 from app.daos.evidence_dao import SessionEvidenceDAO
+from app.daos.ai_provider_dao import AIProviderDAO
+from app.daos.ai_request_log_dao import AIRequestLogDAO
+from app.daos.ai_settings_dao import AISettingsDAO
 from app.daos.card_ai_input_dao import CardAIInputDAO
 from app.daos.card_ai_output_dao import CardAIOutputDAO
 from app.daos.card_dao import CardDAO
@@ -25,6 +28,7 @@ from app.daos.session_dao import SessionDAO
 from app.daos.session_pause_dao import SessionPauseDAO
 from app.daos.user_dao import UserDAO
 from app.services.auth_service import AuthService
+from app.services.ai_configuration_service import AIConfigurationService
 from app.services.card_ai_service import CardAIService
 from app.services.browser_service import BrowserService
 from app.services.history_service import HistoryService
@@ -80,6 +84,7 @@ class MainController:
 
         cards_connector = DatabaseConnector().connection_factory()
         card_output_dao = CardAIOutputDAO(cards_connector)
+        request_log_dao = AIRequestLogDAO(cards_connector)
         context_service = None
         try:
             context_service = RAGContextService(card_output_dao)
@@ -88,10 +93,16 @@ class MainController:
             self._logger.warning("No fue posible preparar el contexto RAG: %s", exc)
             context_service = None
 
+        ai_configuration_service = AIConfigurationService(
+            AISettingsDAO(cards_connector),
+            AIProviderDAO(cards_connector),
+        )
         card_service = CardAIService(
             CardDAO(cards_connector),
             CardAIInputDAO(cards_connector),
             card_output_dao,
+            request_log_dao,
+            ai_configuration_service,
             context_service=context_service,
         )
         self.cardsAI = CardAIController(card_service)
