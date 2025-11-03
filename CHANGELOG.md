@@ -4,6 +4,7 @@
 ### Changed
 - `CardAIService` ahora consume la API oficial de OpenAI con selección de modelo `gpt-4o-mini`/`gpt-4-turbo` vía `modo_prueba` y maneja los errores de red y límites con excepciones claras.
 - Se actualizaron las pruebas unitarias para stubear las llamadas a OpenAI y validar el modelo seleccionado en modo de prueba.
+- El generador DDE permite controlar vía `usarRga` si se recupera y adjunta el contexto RGA, dejando el valor predeterminado en `False`.
 
 ### Added
 - Cliente `generar_dde` basado en `openai` que construye el prompt YAML corporativo, valida el JSON de salida y ofrece ejemplo de uso.

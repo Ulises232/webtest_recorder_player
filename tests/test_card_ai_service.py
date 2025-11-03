@@ -449,7 +449,7 @@ def test_generate_document_injects_retrieved_context() -> None:
         infoAdicional="",
     )
 
-    result = service.generate_document(payload)
+    result = service.generate_document(payload, usar_rga=True)
 
     payload_sent = captured.get("payload")
     assert isinstance(payload_sent, dict)
@@ -461,6 +461,48 @@ def test_generate_document_injects_retrieved_context() -> None:
     assert messages[2]["role"] == "user"
     assert context_service.receivedQueries[0].startswith("EA-172")
     assert result.output.content["usados_como_contexto"] == context_service.contextTitles
+
+
+def test_generate_document_skips_context_when_flag_disabled() -> None:
+    """The service must avoid requesting RGA context unless explicitly enabled."""
+
+    captured: Dict[str, object] = {}
+
+    def capturing_chat_completion(payload: Dict[str, object]) -> Dict[str, object]:
+        captured["payload"] = payload
+        return successful_chat_completion(payload)
+
+    fake_input = FakeInputDAO()
+    fake_output = FakeOutputDAO()
+    context_service = FakeContextService()
+    service = CardAIService(
+        FakeCardDAO(),
+        fake_input,
+        fake_output,
+        chat_completion_create=capturing_chat_completion,
+        context_service=context_service,
+    )
+
+    payload = CardAIRequestDTO(
+        cardId=1,
+        tipo="INCIDENCIA",
+        descripcion="Descripción",
+        analisis="",
+        recomendaciones="",
+        cosasPrevenir="",
+        infoAdicional="",
+    )
+
+    result = service.generate_document(payload)
+
+    payload_sent = captured.get("payload")
+    assert isinstance(payload_sent, dict)
+    messages = payload_sent["messages"]  # type: ignore[index]
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    assert messages[1]["role"] == "user"
+    assert context_service.receivedQueries == []
+    assert "usados_como_contexto" not in result.output.content
 
 
 def test_generate_document_uses_test_model_when_requested() -> None:

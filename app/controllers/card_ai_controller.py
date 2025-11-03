@@ -78,8 +78,20 @@ class CardAIController:
             modo_prueba = modo_prueba_raw
         elif isinstance(modo_prueba_raw, str):
             modo_prueba = modo_prueba_raw.strip().lower() in {"true", "1", "si", "sí"}
+
+        usar_rga_raw = payload.get("usarRga")
+        usar_rga = False
+        if isinstance(usar_rga_raw, bool):
+            usar_rga = usar_rga_raw
+        elif isinstance(usar_rga_raw, str):
+            usar_rga = usar_rga_raw.strip().lower() in {"true", "1", "si", "sí"}
+
         try:
-            return self._service.generate_document(dto, modo_prueba=modo_prueba)
+            return self._service.generate_document(
+                dto,
+                modo_prueba=modo_prueba,
+                usar_rga=usar_rga,
+            )
         except CardAIServiceError as exc:
             raise RuntimeError(str(exc)) from exc
 

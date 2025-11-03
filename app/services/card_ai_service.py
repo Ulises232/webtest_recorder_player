@@ -330,7 +330,10 @@ class CardAIService:
         return self._openai_client
 
     def generate_document(
-        self, payload: CardAIRequestDTO, modo_prueba: bool = False
+        self,
+        payload: CardAIRequestDTO,
+        modo_prueba: bool = False,
+        usar_rga: bool = False,
     ) -> CardAIGenerationResultDTO:
         """Persist the prompt, invoke the LLM and store the resulting JSON."""
 
@@ -358,7 +361,7 @@ class CardAIService:
         prompt = self._build_user_prompt(payload.tipo, titulo, payload)
         context_text = ""
         context_titles: List[str] = []
-        if self._context_service:
+        if usar_rga and self._context_service:
             query_parts = [
                 titulo,
                 payload.descripcion or "",
@@ -384,7 +387,7 @@ class CardAIService:
         except ValueError as exc:
             raise CardAIServiceError("El modelo no devolvió un JSON válido.") from exc
 
-        if context_titles:
+        if usar_rga and context_titles:
             content_json["usados_como_contexto"] = context_titles
 
         try:
@@ -423,7 +426,10 @@ class CardAIService:
         return cleaned.strip()
 
     def regenerate_from_input(
-        self, input_id: int, modo_prueba: bool = False
+        self,
+        input_id: int,
+        modo_prueba: bool = False,
+        usar_rga: bool = False,
     ) -> CardAIGenerationResultDTO:
         """Trigger a new generation using the stored input fields."""
 
@@ -445,7 +451,11 @@ class CardAIService:
             infoAdicional=input_dto.infoAdicional,
             forceSaveInputs=True,
         )
-        return self.generate_document(payload, modo_prueba=modo_prueba)
+        return self.generate_document(
+            payload,
+            modo_prueba=modo_prueba,
+            usar_rga=usar_rga,
+        )
 
     def _load_system_prompt_from_file(self) -> str:
         """Read the corporate system prompt from the configured file path."""
