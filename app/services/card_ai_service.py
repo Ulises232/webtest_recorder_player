@@ -31,6 +31,7 @@ except ModuleNotFoundError:  # pragma: no cover - depende del entorno
     OpenAI = None  # type: ignore[assignment]
 
 from app.config.ai_config import AIConfiguration
+from app.daos.ai_request_log_dao import AIRequestLogDAO, AIRequestLogDAOError
 from app.daos.card_ai_input_dao import CardAIInputDAO, CardAIInputDAOError
 from app.daos.card_ai_output_dao import CardAIOutputDAO, CardAIOutputDAOError
 from app.daos.card_dao import CardDAO, CardDAOError
@@ -68,6 +69,7 @@ class CardAIService:
         card_dao: CardDAO,
         input_dao: CardAIInputDAO,
         output_dao: CardAIOutputDAO,
+        request_log_dao: AIRequestLogDAO,
         configuration_service: AIConfigurationService,
         configuration: Optional[AIConfiguration] = None,
         http_post: Optional[Callable[..., requests.Response]] = None,
@@ -85,6 +87,7 @@ class CardAIService:
         self._card_dao = card_dao
         self._input_dao = input_dao
         self._output_dao = output_dao
+        self._request_log_dao = request_log_dao
         self._config = configuration or AIConfiguration()
         self._http_post = http_post or requests.post
         self._system_prompt_loader: Callable[[], str] = (
@@ -300,6 +303,29 @@ class CardAIService:
             return self._invoke_mistral(messages, configuration)
         raise CardAIServiceError(f"Proveedor de IA desconocido: {provider_key}")
 
+    def _build_request_audit_payload(
+        self,
+        payload: CardAIRequestDTO,
+        configuration: ResolvedAIConfigurationDTO,
+        messages: List[Dict[str, str]],
+        context_titles: List[str],
+        use_rag: bool,
+    ) -> Dict[str, object]:
+        """Compose the metadata stored for auditing each AI invocation."""
+
+        return {
+            "cardId": payload.cardId,
+            "tipo": payload.tipo,
+            "providerKey": configuration.providerKey,
+            "modelName": configuration.modelName,
+            "temperature": configuration.temperature,
+            "topP": configuration.topP,
+            "maxTokens": configuration.maxTokens,
+            "messages": messages,
+            "useRag": use_rag,
+            "contextTitles": context_titles,
+        }
+
     def generate_document(self, payload: CardAIRequestDTO) -> CardAIGenerationResultDTO:
         """Persist the prompt, invoke the LLM and store the resulting JSON."""
 
@@ -363,20 +389,77 @@ class CardAIService:
                 except Exception as exc:  # pragma: no cover - depende de librerías opcionales
                     logger.warning("No fue posible recuperar contexto previo: %s", exc)
         messages = self._build_messages(system_prompt, prompt, context_text)
-        llm_response = self._call_llm(messages, resolved_configuration)
+        request_audit_payload = self._build_request_audit_payload(
+            payload,
+            resolved_configuration,
+            messages,
+            context_titles,
+            use_rag,
+        )
+        request_payload_serialized = self._serialize_for_log(request_audit_payload)
+        response_payload_serialized: Optional[str] = None
+        normalized_content: Optional[str] = None
 
         try:
-            content = llm_response["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise CardAIServiceError("La respuesta del modelo no contiene contenido utilizable.") from exc
+            llm_response = self._call_llm(messages, resolved_configuration)
+        except CardAIServiceError as exc:
+            self._log_ai_interaction(
+                payload.cardId,
+                input_dto.inputId,
+                resolved_configuration,
+                request_payload_serialized,
+                None,
+                None,
+                False,
+                str(exc),
+            )
+            raise
 
+        response_payload_serialized = self._serialize_for_log(llm_response)
+        raw_content: Optional[str] = None
         try:
-            content_json = json.loads(self._normalize_json_content(content))
+            raw_content = self._extract_response_content(llm_response)
+            normalized_content = self._normalize_json_content(raw_content)
+            content_json = json.loads(normalized_content)
+        except CardAIServiceError as exc:
+            self._log_ai_interaction(
+                payload.cardId,
+                input_dto.inputId,
+                resolved_configuration,
+                request_payload_serialized,
+                response_payload_serialized,
+                normalized_content or raw_content,
+                False,
+                str(exc),
+            )
+            raise
         except ValueError as exc:
-            raise CardAIServiceError("El modelo no devolvió un JSON válido.") from exc
+            error = CardAIServiceError("El modelo no devolvió un JSON válido.")
+            self._log_ai_interaction(
+                payload.cardId,
+                input_dto.inputId,
+                resolved_configuration,
+                request_payload_serialized,
+                response_payload_serialized,
+                normalized_content or raw_content,
+                False,
+                str(error),
+            )
+            raise error from exc
 
         if context_titles:
             content_json["usados_como_contexto"] = context_titles
+
+        self._log_ai_interaction(
+            payload.cardId,
+            input_dto.inputId,
+            resolved_configuration,
+            request_payload_serialized,
+            response_payload_serialized,
+            normalized_content,
+            True,
+            None,
+        )
 
         try:
             output_dto = self._output_dao.create_output(
@@ -391,6 +474,16 @@ class CardAIService:
             raise CardAIServiceError(str(exc)) from exc
 
         return CardAIGenerationResultDTO(input=input_dto, output=output_dto, completenessPct=completeness)
+
+    def _extract_response_content(self, response: Dict[str, object]) -> str:
+        """Return the assistant message content from a chat completion response."""
+
+        try:
+            return str(response["choices"][0]["message"]["content"])  # type: ignore[index]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise CardAIServiceError(
+                "La respuesta del modelo no contiene contenido utilizable."
+            ) from exc
 
     def _invoke_local(
         self, messages: List[Dict[str, str]], configuration: ResolvedAIConfigurationDTO
@@ -569,6 +662,39 @@ class CardAIService:
             if cleaned.endswith("```"):
                 cleaned = cleaned[:-3]
         return cleaned.strip()
+
+    def _serialize_for_log(self, data: object) -> str:
+        """Serialize arbitrary data to JSON for audit storage."""
+
+        return json.dumps(data, ensure_ascii=False, default=str)
+
+    def _log_ai_interaction(
+        self,
+        card_id: int,
+        input_id: Optional[int],
+        configuration: ResolvedAIConfigurationDTO,
+        request_payload: str,
+        response_payload: Optional[str],
+        response_content: Optional[str],
+        is_valid_json: bool,
+        error_message: Optional[str],
+    ) -> None:
+        """Persist an audit entry capturing the LLM request and response."""
+
+        try:
+            self._request_log_dao.create_log(
+                card_id=card_id,
+                input_id=input_id,
+                provider_key=configuration.providerKey,
+                model_name=configuration.modelName,
+                request_payload=request_payload,
+                response_payload=response_payload,
+                response_content=response_content,
+                is_valid_json=is_valid_json,
+                error_message=error_message,
+            )
+        except AIRequestLogDAOError as exc:  # pragma: no cover - depende de SQL Server
+            logger.warning("No fue posible registrar la petición de IA: %s", exc)
 
     def regenerate_from_input(self, input_id: int) -> CardAIGenerationResultDTO:
         """Trigger a new generation using the stored input fields."""

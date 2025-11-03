@@ -5,6 +5,7 @@
 - Servicio `AIConfigurationService` con sus DAOs (`AISettingsDAO` y `AIProviderDAO`) para resolver proveedores de IA desde SQL Server, incluida la semilla automática de los cuatro proveedores soportados.
 - Selector de proveedor en la captura de DDE/HU que toma el favorito como predeterminado y permite cambiarlo por petición.
 - Compatibilidad con los endpoints locales OpenAI, OpenAI oficial (gpt-4o-mini y gpt-4-turbo) y Mistral desde `CardAIService`, junto con pruebas unitarias para el flujo remoto.
+- Tabla `dbo.ai_request_logs` y auditoría automática en `CardAIService` que guarda cada petición/respuesta y marca cuando el JSON devuelto no es válido.
 
 ### Changed
 - `CardAIService` ahora consulta la configuración persistida, evita enviar contexto RAG cuando el proveedor no es local y usa el SDK oficial de OpenAI o las rutas HTTP correspondientes según el caso.

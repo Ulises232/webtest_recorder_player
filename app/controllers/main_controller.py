@@ -18,6 +18,7 @@ from app.controllers.session_controller import SessionController
 from app.daos.database import DatabaseConnector
 from app.daos.evidence_dao import SessionEvidenceDAO
 from app.daos.ai_provider_dao import AIProviderDAO
+from app.daos.ai_request_log_dao import AIRequestLogDAO
 from app.daos.ai_settings_dao import AISettingsDAO
 from app.daos.card_ai_input_dao import CardAIInputDAO
 from app.daos.card_ai_output_dao import CardAIOutputDAO
@@ -83,6 +84,7 @@ class MainController:
 
         cards_connector = DatabaseConnector().connection_factory()
         card_output_dao = CardAIOutputDAO(cards_connector)
+        request_log_dao = AIRequestLogDAO(cards_connector)
         context_service = None
         try:
             context_service = RAGContextService(card_output_dao)
@@ -99,6 +101,7 @@ class MainController:
             CardDAO(cards_connector),
             CardAIInputDAO(cards_connector),
             card_output_dao,
+            request_log_dao,
             ai_configuration_service,
             context_service=context_service,
         )

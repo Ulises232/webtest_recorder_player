@@ -473,4 +473,25 @@ CREATE TABLE dbo.ai_providers (
     updated_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
     favorite BIT NOT NULL DEFAULT 0
 );
+
+CREATE TABLE dbo.ai_request_logs (
+    log_id BIGINT IDENTITY(1,1) PRIMARY KEY,
+    card_id BIGINT NULL,
+    input_id BIGINT NULL,
+    provider_key VARCHAR(32) NOT NULL,
+    model_name NVARCHAR(255) NULL,
+    request_payload NVARCHAR(MAX) NOT NULL,
+    response_payload NVARCHAR(MAX) NULL,
+    response_content NVARCHAR(MAX) NULL,
+    is_valid_json BIT NOT NULL DEFAULT 0,
+    error_message NVARCHAR(1024) NULL,
+    created_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT fk_ai_request_logs_card FOREIGN KEY (card_id)
+        REFERENCES dbo.cards(id) ON DELETE SET NULL,
+    CONSTRAINT fk_ai_request_logs_input FOREIGN KEY (input_id)
+        REFERENCES dbo.cards_ai_inputs(input_id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_ai_request_logs_created_at
+    ON dbo.ai_request_logs (created_at DESC, log_id DESC);
 ```
