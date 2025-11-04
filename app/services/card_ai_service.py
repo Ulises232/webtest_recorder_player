@@ -44,6 +44,7 @@ from app.dtos.card_ai_dto import (
     CardAIOutputDTO,
     CardDTO,
     CardFiltersDTO,
+    CatalogOptionDTO,
 )
 from app.services.ai_configuration_service import (
     AIConfigurationService,
@@ -118,6 +119,30 @@ class CardAIService:
 
         try:
             return self._card_dao.list_cards(filters, limit=limit)
+        except CardDAOError as exc:
+            raise CardAIServiceError(str(exc)) from exc
+
+    def list_incidence_types(self) -> List[CatalogOptionDTO]:
+        """Return the available incident types."""
+
+        try:
+            return self._card_dao.list_incident_types()
+        except CardDAOError as exc:
+            raise CardAIServiceError(str(exc)) from exc
+
+    def list_companies(self) -> List[CatalogOptionDTO]:
+        """Return the companies catalog."""
+
+        try:
+            return self._card_dao.list_companies()
+        except CardDAOError as exc:
+            raise CardAIServiceError(str(exc)) from exc
+
+    def list_statuses(self) -> List[str]:
+        """Return the distinct card statuses."""
+
+        try:
+            return self._card_dao.list_statuses()
         except CardDAOError as exc:
             raise CardAIServiceError(str(exc)) from exc
 

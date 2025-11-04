@@ -21,7 +21,6 @@ from app.dtos.card_ai_dto import CardAIGenerationResultDTO, CardAIHistoryEntryDT
 
 
 TYPE_CHOICES = ("INCIDENCIA", "MEJORA", "HU")
-STATUS_CHOICES = ("pending", "in_progress", "done", "closed")
 
 HTML_TEMPLATE_PACKAGE = "app.templates"
 HTML_TEMPLATE_NAME = "card_generation.html"
@@ -954,32 +953,85 @@ def build_cards_ai_view(
     filters_frame = tb.Frame(parent, padding=12)
     filters_frame.pack(fill=X)
 
-    tb.Label(filters_frame, text="Tipo").grid(row=0, column=0, sticky="w")
+    try:
+        incident_type_options = controller.list_incidence_types()
+    except RuntimeError as exc:
+        messagebox.showwarning("Catálogos", f"No fue posible cargar los tipos de incidente:\n{exc}")
+        incident_type_options = []
+
+    try:
+        status_options = controller.list_statuses()
+    except RuntimeError as exc:
+        messagebox.showwarning("Catálogos", f"No fue posible cargar los estatus:\n{exc}")
+        status_options = []
+
+    try:
+        company_options = controller.list_companies()
+    except RuntimeError as exc:
+        messagebox.showwarning("Catálogos", f"No fue posible cargar las empresas:\n{exc}")
+        company_options = []
+
+    incident_type_map = {option.name: option.optionId for option in incident_type_options}
+    incident_type_values = [""] + [option.name for option in incident_type_options]
+    status_values = [""] + status_options
+    company_map = {option.name: option.optionId for option in company_options}
+    company_values = [""] + [option.name for option in company_options]
+
+    tb.Label(filters_frame, text="Tipo incidente").grid(row=0, column=0, sticky="w")
     tipo_var = tk.StringVar(value="")
-    tipo_box = ttk.Combobox(filters_frame, values=("",) + TYPE_CHOICES, textvariable=tipo_var, width=16)
+    tipo_box = ttk.Combobox(
+        filters_frame,
+        values=incident_type_values,
+        textvariable=tipo_var,
+        width=18,
+        state="readonly",
+    )
     tipo_box.grid(row=1, column=0, sticky="we", padx=(0, 10))
+    if incident_type_values:
+        tipo_box.current(0)
 
     tb.Label(filters_frame, text="Status").grid(row=0, column=1, sticky="w")
     status_var = tk.StringVar(value="")
-    status_box = ttk.Combobox(filters_frame, values=("",) + STATUS_CHOICES, textvariable=status_var, width=16)
+    status_box = ttk.Combobox(
+        filters_frame,
+        values=status_values,
+        textvariable=status_var,
+        width=16,
+        state="readonly",
+    )
     status_box.grid(row=1, column=1, sticky="we", padx=(0, 10))
+    if status_values:
+        status_box.current(0)
 
-    tb.Label(filters_frame, text="Fecha inicio").grid(row=0, column=2, sticky="w")
+    tb.Label(filters_frame, text="Empresa").grid(row=0, column=2, sticky="w")
+    company_var = tk.StringVar(value="")
+    company_box = ttk.Combobox(
+        filters_frame,
+        values=company_values,
+        textvariable=company_var,
+        width=22,
+        state="readonly",
+    )
+    company_box.grid(row=1, column=2, sticky="we", padx=(0, 10))
+    if company_values:
+        company_box.current(0)
+
+    tb.Label(filters_frame, text="Fecha inicio").grid(row=0, column=3, sticky="w")
     start_var = DateEntry(filters_frame, dateformat="%Y-%m-%d")
-    start_var.grid(row=1, column=2, sticky="we", padx=(0, 10))
+    start_var.grid(row=1, column=3, sticky="we", padx=(0, 10))
     start_var.entry.delete(0, tk.END)
 
-    tb.Label(filters_frame, text="Fecha fin").grid(row=0, column=3, sticky="w")
+    tb.Label(filters_frame, text="Fecha fin").grid(row=0, column=4, sticky="w")
     end_var = DateEntry(filters_frame, dateformat="%Y-%m-%d")
-    end_var.grid(row=1, column=3, sticky="we", padx=(0, 10))
+    end_var.grid(row=1, column=4, sticky="we", padx=(0, 10))
     end_var.entry.delete(0, tk.END)
 
-    tb.Label(filters_frame, text="Buscar").grid(row=0, column=4, sticky="w")
+    tb.Label(filters_frame, text="Buscar").grid(row=0, column=5, sticky="w")
     search_var = tk.StringVar(value="")
     search_entry = tb.Entry(filters_frame, textvariable=search_var)
-    search_entry.grid(row=1, column=4, sticky="we")
+    search_entry.grid(row=1, column=5, sticky="we")
 
-    filters_frame.grid_columnconfigure(4, weight=1)
+    filters_frame.grid_columnconfigure(5, weight=1)
 
     best_filter_var = tk.StringVar(value="Todas")
     dde_filter_var = tk.StringVar(value="Todas")
@@ -987,22 +1039,71 @@ def build_cards_ai_view(
     table_frame = tb.Frame(parent, padding=(12, 0))
     table_frame.pack(fill=BOTH, expand=YES)
 
-    columns = ("id", "titulo", "tipo", "status", "actualizado", "mejor", "dde")
+    columns_config: Dict[str, Dict[str, object]] = {
+        "ticket": {"text": "Ticket", "width": 110, "anchor": "center"},
+        "titulo": {"text": "Titulo", "width": 360, "stretch": True},
+        "tipo": {"text": "Tipo incidente", "width": 180},
+        "status": {"text": "Status", "width": 140},
+        "empresa": {"text": "Empresa", "width": 200},
+        "actualizado": {"text": "Actualizado", "width": 160, "anchor": "center"},
+        "mejor": {"text": "Mejor respuesta", "width": 140, "anchor": "center"},
+        "dde": {"text": "DDE generada", "width": 140, "anchor": "center"},
+    }
+    columns = tuple(columns_config.keys())
     tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=14)
-    tree.heading("id", text="ID")
-    tree.heading("titulo", text="Título")
-    tree.heading("tipo", text="Tipo")
-    tree.heading("status", text="Status")
-    tree.heading("actualizado", text="Actualizado")
-    tree.heading("mejor", text="Mejor respuesta")
-    tree.heading("dde", text="DDE generada")
-    tree.column("id", width=80, anchor="center")
-    tree.column("titulo", width=360)
-    tree.column("tipo", width=120)
-    tree.column("status", width=120)
-    tree.column("actualizado", width=160)
-    tree.column("mejor", width=140, anchor="center")
-    tree.column("dde", width=140, anchor="center")
+    tree["displaycolumns"] = columns
+
+    active_sort: Dict[str, Optional[str]] = {"column": None, "direction": None}
+
+    def _coerce_sort_value(value: str, column: str) -> object:
+        """Return a comparable value for sorting operations."""
+
+        if column == "actualizado" and value:
+            try:
+                return datetime.strptime(value, "%Y-%m-%d %H:%M")
+            except ValueError:
+                return value
+        if column == "ticket":
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return value
+        normalized = str(value).strip().lower()
+        if normalized in {"si", "no"}:
+            return 1 if normalized == "si" else 0
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return normalized
+
+    def _sort_tree(column: str, force_direction: Optional[str] = None) -> None:
+        """Sort the tree rows using the provided column."""
+
+        direction = force_direction
+        if direction is None:
+            if active_sort["column"] == column and active_sort["direction"] == "asc":
+                direction = "desc"
+            else:
+                direction = "asc"
+        active_sort["column"] = column
+        active_sort["direction"] = direction
+        items = [(tree.set(item_id, column), item_id) for item_id in tree.get_children("")]
+        reverse = direction == "desc"
+        try:
+            items.sort(key=lambda item: _coerce_sort_value(item[0], column), reverse=reverse)
+        except TypeError:
+            items.sort(key=lambda item: str(item[0]).lower(), reverse=reverse)
+        for index, (_, item_id) in enumerate(items):
+            tree.move(item_id, "", index)
+
+    for column_name, column_config in columns_config.items():
+        tree.heading(column_name, text=column_config["text"], command=lambda col=column_name: _sort_tree(col))
+        tree.column(
+            column_name,
+            width=int(column_config.get("width", 120)),
+            anchor=column_config.get("anchor", tk.W),
+            stretch=bool(column_config.get("stretch", False)),
+        )
     tree.tag_configure("best", background="#e6f4ea")
     tree.tag_configure("dde", background="#fff7e6")
 
@@ -1016,6 +1117,30 @@ def build_cards_ai_view(
     actions_frame.pack(fill=X)
     status_label = tb.Label(actions_frame, text="Selecciona una tarjeta para comenzar.", bootstyle=SECONDARY)
     status_label.pack(side=LEFT)
+
+    column_vars: Dict[str, tk.BooleanVar] = {}
+
+    def _toggle_column(column: str) -> None:
+        """Hide or show the requested column ensuring at least one stays visible."""
+
+        visible_columns = [name for name in columns if column_vars[name].get()]
+        if not visible_columns:
+            column_vars[column].set(True)
+            messagebox.showinfo("Columnas", "Debe permanecer al menos una columna visible.")
+            return
+        tree["displaycolumns"] = visible_columns
+
+    column_button = ttk.Menubutton(actions_frame, text="Columnas")
+    column_menu = tk.Menu(column_button, tearoff=False)
+    column_button["menu"] = column_menu
+    for column_name, column_config in columns_config.items():
+        var = tk.BooleanVar(value=True)
+        column_vars[column_name] = var
+        column_menu.add_checkbutton(
+            label=column_config["text"],
+            variable=var,
+            command=lambda col=column_name: _toggle_column(col),
+        )
     history_button = tb.Button(
         actions_frame,
         text="Historial",
@@ -1034,6 +1159,7 @@ def build_cards_ai_view(
     )
     generate_button.pack(side=RIGHT)
     history_button.pack(side=RIGHT, padx=(0, 6))
+    column_button.pack(side=RIGHT, padx=(0, 6))
 
     selected_card: List[CardDTO] = []
     current_cards: List[CardDTO] = []
@@ -1052,15 +1178,22 @@ def build_cards_ai_view(
     def _refresh() -> None:
         """Load the cards from the controller applying filters."""
 
-        filters = {
-            "tipo": tipo_var.get().strip() or None,
-            "status": status_var.get().strip() or None,
+        selected_type = tipo_var.get().strip()
+        selected_status = status_var.get().strip()
+        selected_company = company_var.get().strip()
+        filters: Dict[str, object] = {
             "fechaInicio": _parse_date(start_var),
             "fechaFin": _parse_date(end_var),
             "busqueda": search_var.get().strip() or None,
             "estadoMejor": best_filter_var.get(),
             "estadoDde": dde_filter_var.get(),
         }
+        if selected_type:
+            filters["tipoId"] = incident_type_map.get(selected_type)
+        if selected_status:
+            filters["status"] = selected_status
+        if selected_company:
+            filters["empresaId"] = company_map.get(selected_company)
         try:
             cards = controller.list_cards(filters)
         except RuntimeError as exc:
@@ -1073,26 +1206,30 @@ def build_cards_ai_view(
         history_button.configure(state=tk.DISABLED)
         tree.delete(*tree.get_children(""))
         for card in cards:
-            tags_list = []
+            tags_list: List[str] = []
             if card.hasBestSelection:
                 tags_list.append("best")
             if card.hasDdeGenerated:
                 tags_list.append("dde")
+            formatted_date = _format_datetime(card.updatedAt or card.createdAt)
             tree.insert(
                 "",
                 "end",
                 iid=str(card.cardId),
                 values=(
-                    card.cardId,
+                    card.ticketId or str(card.cardId),
                     card.title,
-                    card.cardType,
+                    card.incidentTypeName or "",
                     card.status,
-                    _format_datetime(card.updatedAt or card.createdAt),
-                    "Sí" if card.hasBestSelection else "No",
-                    "Sí" if card.hasDdeGenerated else "No",
+                    card.companyName or "",
+                    formatted_date,
+                    "Si" if card.hasBestSelection else "No",
+                    "Si" if card.hasDdeGenerated else "No",
                 ),
                 tags=tuple(tags_list),
             )
+        if active_sort["column"] and active_sort["direction"]:
+            _sort_tree(active_sort["column"], force_direction=active_sort["direction"])
         status_label.configure(text=f"{len(cards)} tarjeta(s) encontradas.")
 
     def _on_select(event: tk.Event) -> None:
@@ -1146,7 +1283,7 @@ def build_cards_ai_view(
     dde_filter_box.grid(row=3, column=1, sticky="we", padx=(0, 10))
     dde_filter_box.current(0)
 
-    for widget in (tipo_box, status_box):
+    for widget in (tipo_box, status_box, company_box):
         widget.bind("<<ComboboxSelected>>", lambda *_: _refresh(), add="+")
     start_var.bind("<<DateEntrySelected>>", lambda *_: _refresh(), add="+")
     end_var.bind("<<DateEntrySelected>>", lambda *_: _refresh(), add="+")

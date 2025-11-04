@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from app.dtos.ai_settings_dto import AIProviderRuntimeDTO
 from app.dtos.card_ai_dto import (
@@ -12,6 +12,7 @@ from app.dtos.card_ai_dto import (
     CardAIOutputDTO,
     CardDTO,
     CardFiltersDTO,
+    CatalogOptionDTO,
     card_ai_request_from_dict,
 )
 from app.services.card_ai_service import CardAIService, CardAIServiceError
@@ -46,6 +47,25 @@ class CardAIController:
         elif dde_filter.startswith("sin"):
             dde_generated = False
 
+        incident_type_id: Optional[int] = None
+        if "tipoId" in filters:
+            try:
+                incident_type_id = int(filters["tipoId"]) if filters["tipoId"] is not None else None
+            except (TypeError, ValueError):
+                incident_type_id = None
+        elif filters.get("tipo"):
+            try:
+                incident_type_id = int(filters["tipo"])
+            except (TypeError, ValueError):
+                incident_type_id = None
+
+        company_id: Optional[int] = None
+        if "empresaId" in filters:
+            try:
+                company_id = int(filters["empresaId"]) if filters["empresaId"] is not None else None
+            except (TypeError, ValueError):
+                company_id = None
+
         dto = CardFiltersDTO(
             cardType=str(filters.get("tipo")) if filters.get("tipo") else None,
             status=str(filters.get("status")) if filters.get("status") else None,
@@ -54,6 +74,8 @@ class CardAIController:
             searchText=str(filters.get("busqueda")) if filters.get("busqueda") else None,
             bestSelection=best_selection,
             ddeGenerated=dde_generated,
+            incidentTypeId=incident_type_id,
+            companyId=company_id,
         )
         try:
             return self._service.list_cards(dto)
@@ -147,6 +169,30 @@ class CardAIController:
 
         try:
             return self._service.set_output_dde_generated(output_id, generated)
+        except CardAIServiceError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+    def list_incidence_types(self) -> List[CatalogOptionDTO]:
+        """Expose the catalog of incident types."""
+
+        try:
+            return self._service.list_incidence_types()
+        except CardAIServiceError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+    def list_companies(self) -> List[CatalogOptionDTO]:
+        """Expose the catalog of companies."""
+
+        try:
+            return self._service.list_companies()
+        except CardAIServiceError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+    def list_statuses(self) -> List[str]:
+        """Expose the distinct card statuses."""
+
+        try:
+            return self._service.list_statuses()
         except CardAIServiceError as exc:
             raise RuntimeError(str(exc)) from exc
 

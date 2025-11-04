@@ -19,6 +19,10 @@ class CardDTO:
     updatedAt: Optional[datetime]
     ticketId: str
     branchKey: str
+    incidentTypeId: Optional[int] = None
+    incidentTypeName: str = ""
+    companyId: Optional[int] = None
+    companyName: str = ""
     hasBestSelection: bool = False
     hasDdeGenerated: bool = False
 
@@ -34,6 +38,8 @@ class CardFiltersDTO:
     searchText: Optional[str] = None
     bestSelection: Optional[bool] = None
     ddeGenerated: Optional[bool] = None
+    incidentTypeId: Optional[int] = None
+    companyId: Optional[int] = None
 
 
 @dataclass
@@ -130,4 +136,12 @@ def card_ai_request_from_dict(payload: Dict[str, Any]) -> CardAIRequestDTO:
         ),
         forceSaveInputs=bool(payload.get("forceSaveInputs", False)),
     )
+
+
+@dataclass
+class CatalogOptionDTO:
+    """Represent a generic catalog option exposed to the UI layer."""
+
+    optionId: int
+    name: str
 

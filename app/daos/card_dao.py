@@ -9,7 +9,7 @@ if TYPE_CHECKING:  # pragma: no cover - only used for typing hints
     import pymssql
 
 from app.daos.database import DatabaseConnectorError
-from app.dtos.card_ai_dto import CardDTO, CardFiltersDTO
+from app.dtos.card_ai_dto import CardDTO, CardFiltersDTO, CatalogOptionDTO
 
 
 class CardDAOError(RuntimeError):
@@ -73,15 +73,34 @@ class CardDAO:
             conditions.append(
                 f"{comparator} (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.dde_generated = 1)"
             )
+        if filters.incidentTypeId is not None:
+            conditions.append("c.incidence_type_id = %s")
+            params.append(filters.incidentTypeId)
+        if filters.companyId is not None:
+            conditions.append("c.company_id = %s")
+            params.append(filters.companyId)
 
         where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
 
         sql = (
-            "SELECT TOP (%s) c.id, c.title, COALESCE(c.group_name, ''), COALESCE(c.status,''),"
-            " c.created_at, c.updated_at, COALESCE(c.ticket_id,''), COALESCE(c.branch_key,''),"
+            "SELECT TOP (%s)"
+            " c.id,"
+            " c.title,"
+            " COALESCE(c.group_name, ''),"
+            " COALESCE(c.status,''),"
+            " c.created_at,"
+            " c.updated_at,"
+            " COALESCE(c.ticket_id,''),"
+            " COALESCE(c.branch_key,''),"
+            " c.incidence_type_id,"
+            " COALESCE(cit.name, ''),"
+            " c.company_id,"
+            " COALESCE(cc.name, ''),"
             " CASE WHEN EXISTS (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.is_best = 1) THEN 1 ELSE 0 END,"
             " CASE WHEN EXISTS (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.dde_generated = 1) THEN 1 ELSE 0 END"
             " FROM dbo.cards c"
+            " LEFT JOIN dbo.catalog_incidence_types cit ON cit.id = c.incidence_type_id"
+            " LEFT JOIN dbo.catalog_companies cc ON cc.id = c.company_id"
             f"{where_clause}"
             " ORDER BY COALESCE(c.updated_at, c.created_at) DESC"
         )
@@ -111,8 +130,12 @@ class CardDAO:
                     updatedAt=updated_at,
                     ticketId=str(row[6] or ""),
                     branchKey=str(row[7] or ""),
-                    hasBestSelection=bool(row[8]),
-                    hasDdeGenerated=bool(row[9]),
+                    incidentTypeId=int(row[8]) if row[8] is not None else None,
+                    incidentTypeName=str(row[9] or ""),
+                    companyId=int(row[10]) if row[10] is not None else None,
+                    companyName=str(row[11] or ""),
+                    hasBestSelection=bool(row[12]),
+                    hasDdeGenerated=bool(row[13]),
                 )
             )
         return cards
@@ -137,4 +160,69 @@ class CardDAO:
         if not row:
             raise CardDAOError("La tarjeta solicitada no existe.")
         return str(row[0] or "")
+
+    def list_incident_types(self) -> List[CatalogOptionDTO]:
+        """Return the available incident types ordered alphabetically."""
+
+        try:
+            connection = self._connection_factory()
+        except DatabaseConnectorError as exc:  # pragma: no cover - depende del entorno
+            raise CardDAOError(str(exc)) from exc
+
+        try:
+            cursor = connection.cursor()
+            cursor.execute("SELECT id, COALESCE(name, '') FROM dbo.catalog_incidence_types ORDER BY name ASC")
+            rows: Iterable[Tuple] = cursor.fetchall()
+        except Exception as exc:  # pragma: no cover - depende del driver
+            connection.close()
+            raise CardDAOError("No fue posible leer los tipos de incidente.") from exc
+
+        connection.close()
+        return [
+            CatalogOptionDTO(optionId=int(row[0]), name=str(row[1] or ""))
+            for row in rows
+            if row and row[0] is not None
+        ]
+
+    def list_companies(self) -> List[CatalogOptionDTO]:
+        """Return the companies catalog ordered alphabetically."""
+
+        try:
+            connection = self._connection_factory()
+        except DatabaseConnectorError as exc:  # pragma: no cover - depende del entorno
+            raise CardDAOError(str(exc)) from exc
+
+        try:
+            cursor = connection.cursor()
+            cursor.execute("SELECT id, COALESCE(name, '') FROM dbo.catalog_companies ORDER BY name ASC")
+            rows: Iterable[Tuple] = cursor.fetchall()
+        except Exception as exc:  # pragma: no cover - depende del driver
+            connection.close()
+            raise CardDAOError("No fue posible leer el catálogo de empresas.") from exc
+
+        connection.close()
+        return [
+            CatalogOptionDTO(optionId=int(row[0]), name=str(row[1] or ""))
+            for row in rows
+            if row and row[0] is not None
+        ]
+
+    def list_statuses(self) -> List[str]:
+        """Return the distinct card statuses."""
+
+        try:
+            connection = self._connection_factory()
+        except DatabaseConnectorError as exc:  # pragma: no cover - depende del entorno
+            raise CardDAOError(str(exc)) from exc
+
+        try:
+            cursor = connection.cursor()
+            cursor.execute("SELECT DISTINCT COALESCE(status, '') FROM dbo.cards ORDER BY COALESCE(status, '') ASC")
+            rows: Iterable[Tuple] = cursor.fetchall()
+        except Exception as exc:  # pragma: no cover - depende del driver
+            connection.close()
+            raise CardDAOError("No fue posible leer la lista de estatus.") from exc
+
+        connection.close()
+        return [str(row[0] or "") for row in rows if row and str(row[0] or "").strip()]
 

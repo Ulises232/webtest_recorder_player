@@ -3,7 +3,10 @@
 ## [Unreleased]
 ### Added
 - Botón en el historial de `cards_ai_outputs` para quitar la marca de mejor respuesta junto con el soporte en controlador, servicio y DAO.
+- Columna de empresa, menu para ocultar/mostrar columnas y ordenamiento por encabezado en la cuadricula principal de tarjetas.
 
+### Changed
+- La tabla de tarjetas ahora muestra el ticket_id, el tipo de incidente desde catalog_incidence_types y los filtros de status y empresa obtenidos con consultas a SQL Server.
 ## [0.10.0] - 2024-06-09
 ### Added
 - Servicio `AIConfigurationService` con sus DAOs (`AISettingsDAO` y `AIProviderDAO`) para resolver proveedores de IA desde SQL Server, incluida la semilla automática de los cuatro proveedores soportados.
