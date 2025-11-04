@@ -334,6 +334,78 @@ class CardAIOutputDAO:
             createdAt=created_at,
         )
 
+    def clear_best_output(self, output_id: int) -> CardAIOutputDTO:
+        """Remove the preferred flag from the provided output identifier."""
+
+        self._ensure_schema()
+        try:
+            connection = self._connection_factory()
+        except DatabaseConnectorError as exc:  # pragma: no cover
+            raise CardAIOutputDAOError(str(exc)) from exc
+
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                (
+                    "SELECT output_id, card_id, input_id, llm_id, llm_model, llm_usage_json, content_json, is_best, dde_generated, created_at "
+                    "FROM dbo.cards_ai_outputs WHERE output_id = %s"
+                ),
+                (output_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                connection.close()
+                raise CardAIOutputDAOError("El resultado indicado no existe.")
+
+            cursor.execute(
+                "UPDATE dbo.cards_ai_outputs SET is_best = 0 WHERE output_id = %s",
+                (output_id,),
+            )
+            cursor.execute(
+                (
+                    "SELECT output_id, card_id, input_id, llm_id, llm_model, llm_usage_json, content_json, is_best, dde_generated, created_at "
+                    "FROM dbo.cards_ai_outputs WHERE output_id = %s"
+                ),
+                (output_id,),
+            )
+            updated = cursor.fetchone()
+            connection.commit()
+        except CardAIOutputDAOError:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            connection.close()
+            raise
+        except Exception as exc:  # pragma: no cover - depende del driver
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            connection.close()
+            raise CardAIOutputDAOError("No fue posible quitar la marca de mejor respuesta.") from exc
+
+        connection.close()
+
+        if not updated:
+            raise CardAIOutputDAOError("El resultado indicado no existe.")
+
+        created_at = updated[9]
+        if not isinstance(created_at, datetime):
+            created_at = datetime.fromisoformat(str(created_at))
+        return CardAIOutputDTO(
+            outputId=int(updated[0]),
+            cardId=int(updated[1]),
+            inputId=int(updated[2]) if updated[2] is not None else None,
+            llmId=updated[3],
+            llmModel=updated[4],
+            llmUsage=json.loads(updated[5] or "{}"),
+            content=json.loads(updated[6] or "{}"),
+            isBest=bool(updated[7]),
+            ddeGenerated=bool(updated[8]),
+            createdAt=created_at,
+        )
+
     def mark_dde_generated(self, output_id: int, generated: bool) -> CardAIOutputDTO:
         """Toggle the flag that indicates whether the output produced a DDE."""
 

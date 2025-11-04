@@ -188,6 +188,25 @@ class CardAIService:
 
         return updated
 
+    def clear_output_best_flag(self, output_id: int) -> CardAIOutputDTO:
+        """Remove the preferred flag from the selected output."""
+
+        try:
+            updated = self._output_dao.clear_best_output(output_id)
+        except CardAIOutputDAOError as exc:
+            raise CardAIServiceError(str(exc)) from exc
+
+        if self._context_service:
+            try:
+                self._context_service.index_from_database()
+            except Exception as exc:  # pragma: no cover - depende de servicios opcionales
+                logger.warning(
+                    "No fue posible reindexar el contexto tras quitar favorito: %s",
+                    exc,
+                )
+
+        return updated
+
     def set_output_dde_generated(self, output_id: int, generated: bool) -> CardAIOutputDTO:
         """Update the flag that tracks whether the output produced a DDE."""
 

@@ -104,7 +104,9 @@ class FakeOutputDAO:
         self.deleted: List[int] = []
         self.fail_on_delete = False
         self.fail_on_mark = False
+        self.fail_on_clear_best = False
         self.marked_best: List[int] = []
+        self.cleared_best: List[int] = []
         self.fail_on_mark_dde = False
         self.marked_dde: List[int] = []
 
@@ -154,6 +156,18 @@ class FakeOutputDAO:
         for item in self.created:
             item.isBest = item.outputId == output_id
         self.marked_best.append(output_id)
+        return dto
+
+    def clear_best_output(self, output_id: int):
+        """Remove the preferred flag from the provided output identifier."""
+
+        if self.fail_on_clear_best:
+            raise CardAIOutputDAOError("boom")
+        dto = next((item for item in self.created if item.outputId == output_id), None)
+        if not dto:
+            raise CardAIOutputDAOError("missing")
+        dto.isBest = False
+        self.cleared_best.append(output_id)
         return dto
 
     def mark_dde_generated(self, output_id: int, generated: bool):
@@ -846,6 +860,72 @@ def test_mark_output_as_best_wraps_dao_errors() -> None:
 
     with pytest.raises(CardAIServiceError):
         service.mark_output_as_best(1)
+
+
+def test_clear_output_best_flag_reindexes_context() -> None:
+    """Removing the preferred flag should update the DAO and refresh the context index."""
+
+    fake_input = FakeInputDAO()
+    fake_output = FakeOutputDAO()
+    context_service = FakeContextService()
+    fake_logs = FakeRequestLogDAO()
+    service = CardAIService(
+        FakeCardDAO(),
+        fake_input,
+        fake_output,
+        fake_logs,
+        FakeAIConfigurationService(),
+        http_post=successful_http_post,
+        context_service=context_service,
+    )
+
+    payload = CardAIRequestDTO(
+        cardId=1,
+        tipo="INCIDENCIA",
+        descripcion="Descripcion",
+        analisis="",
+        recomendaciones="",
+        cosasPrevenir="",
+        infoAdicional="",
+    )
+
+    result = service.generate_document(payload)
+    service.mark_output_as_best(result.output.outputId)
+    updated = service.clear_output_best_flag(result.output.outputId)
+
+    assert updated.isBest is False
+    assert fake_output.cleared_best == [result.output.outputId]
+    assert context_service.reindexed == 2
+
+
+def test_clear_output_best_flag_wraps_dao_errors() -> None:
+    """DAO failures while clearing the preferred result should bubble up as service errors."""
+
+    fake_output = FakeOutputDAO()
+    fake_output.fail_on_clear_best = True
+    service = CardAIService(
+        FakeCardDAO(),
+        FakeInputDAO(),
+        fake_output,
+        FakeRequestLogDAO(),
+        FakeAIConfigurationService(),
+        http_post=successful_http_post,
+    )
+
+    payload = CardAIRequestDTO(
+        cardId=1,
+        tipo="INCIDENCIA",
+        descripcion="Descripcion",
+        analisis="",
+        recomendaciones="",
+        cosasPrevenir="",
+        infoAdicional="",
+    )
+
+    result = service.generate_document(payload)
+
+    with pytest.raises(CardAIServiceError):
+        service.clear_output_best_flag(result.output.outputId)
 
 
 def test_set_output_dde_generated_updates_flag() -> None:

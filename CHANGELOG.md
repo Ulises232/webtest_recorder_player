@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Added
+- Botón en el historial de `cards_ai_outputs` para quitar la marca de mejor respuesta junto con el soporte en controlador, servicio y DAO.
+
 ## [0.10.0] - 2024-06-09
 ### Added
 - Servicio `AIConfigurationService` con sus DAOs (`AISettingsDAO` y `AIProviderDAO`) para resolver proveedores de IA desde SQL Server, incluida la semilla automática de los cuatro proveedores soportados.

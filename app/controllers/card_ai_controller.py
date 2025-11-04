@@ -134,6 +134,14 @@ class CardAIController:
         except CardAIServiceError as exc:
             raise RuntimeError(str(exc)) from exc
 
+    def clear_output_best_flag(self, output_id: int) -> CardAIOutputDTO:
+        """Remove the preferred flag from the selected output."""
+
+        try:
+            return self._service.clear_output_best_flag(output_id)
+        except CardAIServiceError as exc:
+            raise RuntimeError(str(exc)) from exc
+
     def mark_output_dde_generated(self, output_id: int, generated: bool) -> CardAIOutputDTO:
         """Toggle the DDE generated flag for the selected output."""
 
