@@ -264,6 +264,67 @@ class CardAIOutputDAO:
         if affected == 0:
             raise CardAIOutputDAOError("El resultado solicitado no existe o ya fue eliminado.")
 
+    def update_output_content(self, output_id: int, content: dict) -> CardAIOutputDTO:
+        """Replace the JSON payload stored for the provided output identifier."""
+
+        self._ensure_schema()
+        try:
+            connection = self._connection_factory()
+        except DatabaseConnectorError as exc:  # pragma: no cover - depende del entorno
+            raise CardAIOutputDAOError(str(exc)) from exc
+
+        serialized_content = json.dumps(content)
+
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                "UPDATE dbo.cards_ai_outputs SET content_json = %s WHERE output_id = %s",
+                (serialized_content, output_id),
+            )
+            if (cursor.rowcount or 0) == 0:
+                connection.rollback()
+                connection.close()
+                raise CardAIOutputDAOError("El resultado indicado no existe.")
+            cursor.execute(
+                (
+                    "SELECT output_id, card_id, input_id, llm_id, llm_model, llm_usage_json, content_json, is_best, dde_generated, created_at "
+                    "FROM dbo.cards_ai_outputs WHERE output_id = %s"
+                ),
+                (output_id,),
+            )
+            updated = cursor.fetchone()
+            connection.commit()
+        except CardAIOutputDAOError:
+            raise
+        except Exception as exc:  # pragma: no cover - depende del driver
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            connection.close()
+            raise CardAIOutputDAOError("No fue posible actualizar el contenido almacenado.") from exc
+
+        connection.close()
+
+        if not updated:
+            raise CardAIOutputDAOError("El resultado indicado no existe.")
+
+        created_at = updated[9]
+        if not isinstance(created_at, datetime):
+            created_at = datetime.fromisoformat(str(created_at))
+        return CardAIOutputDTO(
+            outputId=int(updated[0]),
+            cardId=int(updated[1]),
+            inputId=int(updated[2]) if updated[2] is not None else None,
+            llmId=updated[3],
+            llmModel=updated[4],
+            llmUsage=json.loads(updated[5] or "{}"),
+            content=json.loads(updated[6] or "{}"),
+            isBest=bool(updated[7]),
+            ddeGenerated=bool(updated[8]),
+            createdAt=created_at,
+        )
+
     def mark_best_output(self, output_id: int) -> CardAIOutputDTO:
         """Mark the selected output as the preferred answer for its card."""
 

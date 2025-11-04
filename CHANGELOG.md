@@ -4,6 +4,7 @@
 ### Added
 - Botón en el historial de `cards_ai_outputs` para quitar la marca de mejor respuesta junto con el soporte en controlador, servicio y DAO.
 - Columna de empresa, menu para ocultar/mostrar columnas y ordenamiento por encabezado en la cuadricula principal de tarjetas.
+- Edición manual de las respuestas generadas para `cards_ai_outputs` desde la ventana de resultado y el historial, incluyendo el guardado en la base de datos y la reutilización inmediata en exportaciones.
 
 ### Changed
 - La tabla de tarjetas ahora muestra el ticket_id, el tipo de incidente desde catalog_incidence_types y los filtros de status y empresa obtenidos con consultas a SQL Server.

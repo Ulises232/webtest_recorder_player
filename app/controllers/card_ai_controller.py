@@ -148,6 +148,14 @@ class CardAIController:
         except CardAIServiceError as exc:
             raise RuntimeError(str(exc)) from exc
 
+    def update_output_content(self, output_id: int, content: Dict[str, object]) -> CardAIOutputDTO:
+        """Persist manual edits performed over a generated output."""
+
+        try:
+            return self._service.update_output_content(output_id, content)
+        except CardAIServiceError as exc:
+            raise RuntimeError(str(exc)) from exc
+
     def mark_output_as_best(self, output_id: int) -> CardAIOutputDTO:
         """Mark the selected output as the preferred document."""
 

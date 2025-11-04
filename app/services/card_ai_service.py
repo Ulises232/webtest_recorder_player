@@ -197,6 +197,25 @@ class CardAIService:
         except CardAIOutputDAOError as exc:
             raise CardAIServiceError(str(exc)) from exc
 
+    def update_output_content(self, output_id: int, content: Dict[str, object]) -> CardAIOutputDTO:
+        """Persist changes to the JSON payload of a stored output."""
+
+        if not isinstance(content, dict):
+            raise CardAIServiceError("El contenido actualizado debe ser un objeto JSON.")
+
+        try:
+            updated = self._output_dao.update_output_content(output_id, content)
+        except CardAIOutputDAOError as exc:
+            raise CardAIServiceError(str(exc)) from exc
+
+        if self._context_service:
+            try:
+                self._context_service.index_from_database()
+            except Exception as exc:  # pragma: no cover - depende de servicios opcionales
+                logger.warning("No fue posible reindexar el contexto tras actualizar el contenido: %s", exc)
+
+        return updated
+
     def mark_output_as_best(self, output_id: int) -> CardAIOutputDTO:
         """Flag an output as the preferred response for its card."""
 

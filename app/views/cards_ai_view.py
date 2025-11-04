@@ -332,7 +332,8 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
             return
         pretty = json.dumps(entry.output.content, ensure_ascii=False, indent=2)
         detail.insert("1.0", pretty)
-        detail.configure(state="disabled")
+        detail.configure(state="normal")
+        detail.edit_modified(False)
         if entry.output.ddeGenerated:
             mark_dde_button.configure(text="Quitar marca DDE", bootstyle=WARNING)
         else:
@@ -446,6 +447,39 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
         else:
             messagebox.showinfo("Historial", "Se quitó la marca de DDE generada.")
 
+    def save_selected_changes() -> None:
+        """Persist manual edits applied to the selected history entry."""
+
+        nonlocal history_entries
+        entry = get_selected_entry()
+        if not entry:
+            return
+        raw_content = detail.get("1.0", "end").strip()
+        if not raw_content:
+            messagebox.showerror("Formato inv�lido", "El contenido no puede estar vac�o.")
+            return
+        try:
+            parsed = json.loads(raw_content)
+        except json.JSONDecodeError as exc:
+            messagebox.showerror("Formato inv�lido", f"El contenido no es un JSON v�lido:\n{exc}")
+            return
+        if not isinstance(parsed, dict):
+            messagebox.showerror("Formato inv�lido", "El JSON debe contener un objeto en la ra�z.")
+            return
+        try:
+            updated_output = controller.update_output_content(entry.output.outputId, parsed)
+        except RuntimeError as exc:
+            messagebox.showerror("Error", str(exc))
+            return
+
+        updated_entry = CardAIHistoryEntryDTO(output=updated_output, input=entry.input)
+        history_entries = [
+            updated_entry if item.output.outputId == updated_output.outputId else item
+            for item in history_entries
+        ]
+        populate_tree(history_entries, selected_output=updated_output.outputId)
+        messagebox.showinfo("Historial", "Los cambios se guardaron correctamente.")
+
     actions = tb.Frame(win, padding=(12, 0, 12, 12))
     actions.pack(fill=X)
 
@@ -497,6 +531,16 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
         state=tk.DISABLED,
     )
     best_toggle_button.pack(side=RIGHT, padx=(0, 6))
+
+    save_changes_button = tb.Button(
+        actions,
+        text="Guardar cambios",
+        bootstyle=SUCCESS,
+        command=save_selected_changes,
+        state=tk.DISABLED,
+    )
+    save_changes_button.pack(side=RIGHT, padx=(0, 6))
+    managed_buttons.append(save_changes_button)
 
     mark_dde_button = tb.Button(
         actions,
@@ -600,7 +644,7 @@ def _show_generation_result(
     text.configure(state="normal")
     pretty = json.dumps(result.output.content, ensure_ascii=False, indent=2)
     text.insert("1.0", pretty)
-    text.configure(state="disabled")
+    text.edit_modified(False)
 
     actions = tb.Frame(win, padding=12)
     actions.pack(fill=X)
@@ -667,6 +711,54 @@ def _show_generation_result(
 
         _set_running(True)
         threading.Thread(target=worker, daemon=True).start()
+
+    def save_changes() -> None:
+        """Persist manual edits performed over the generated output."""
+
+        raw_content = text.get("1.0", "end").strip()
+        if not raw_content:
+            messagebox.showerror("Formato inv�lido", "El contenido no puede estar vac�o.")
+            return
+        try:
+            parsed = json.loads(raw_content)
+        except json.JSONDecodeError as exc:
+            messagebox.showerror("Formato inv�lido", f"El contenido no es un JSON v�lido:\n{exc}")
+            return
+        if not isinstance(parsed, dict):
+            messagebox.showerror("Formato inv�lido", "El JSON debe contener un objeto en la ra�z.")
+            return
+
+        def _task() -> None:
+            try:
+                updated_output = controller.update_output_content(result.output.outputId, parsed)
+            except RuntimeError as exc:
+                error_message = str(exc)
+                win.after(
+                    0,
+                    lambda message=error_message: messagebox.showerror("Error", message),
+                )
+                return
+
+            formatted = json.dumps(updated_output.content, ensure_ascii=False, indent=2)
+
+            def _refresh() -> None:
+                text.configure(state="normal")
+                text.delete("1.0", "end")
+                text.insert("1.0", formatted)
+                text.edit_modified(False)
+                result.output = updated_output
+                messagebox.showinfo("Resultado", "Los cambios se guardaron correctamente.")
+
+            win.after(0, _refresh)
+
+        _background_call(_task)
+
+    tb.Button(
+        actions,
+        text="Guardar cambios",
+        bootstyle=SUCCESS,
+        command=save_changes,
+    ).pack(side=RIGHT, padx=(0, 8))
 
     def regenerate() -> None:
         """Trigger a new generation using the stored input."""
