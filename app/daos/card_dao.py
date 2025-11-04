@@ -92,6 +92,8 @@ class CardDAO:
             " c.updated_at,"
             " COALESCE(c.ticket_id,''),"
             " COALESCE(c.branch_key,''),"
+            " c.sprint_id,"
+            " COALESCE(s.name, ''),"
             " c.incidence_type_id,"
             " COALESCE(cit.name, ''),"
             " c.company_id,"
@@ -101,6 +103,7 @@ class CardDAO:
             " FROM dbo.cards c"
             " LEFT JOIN dbo.catalog_incidence_types cit ON cit.id = c.incidence_type_id"
             " LEFT JOIN dbo.catalog_companies cc ON cc.id = c.company_id"
+            " LEFT JOIN dbo.sprints s ON s.id = c.sprint_id"
             f"{where_clause}"
             " ORDER BY COALESCE(c.updated_at, c.created_at) DESC"
         )
@@ -130,12 +133,14 @@ class CardDAO:
                     updatedAt=updated_at,
                     ticketId=str(row[6] or ""),
                     branchKey=str(row[7] or ""),
-                    incidentTypeId=int(row[8]) if row[8] is not None else None,
-                    incidentTypeName=str(row[9] or ""),
-                    companyId=int(row[10]) if row[10] is not None else None,
-                    companyName=str(row[11] or ""),
-                    hasBestSelection=bool(row[12]),
-                    hasDdeGenerated=bool(row[13]),
+                    sprintId=int(row[8]) if row[8] is not None else None,
+                    sprintName=str(row[9] or ""),
+                    incidentTypeId=int(row[10]) if row[10] is not None else None,
+                    incidentTypeName=str(row[11] or ""),
+                    companyId=int(row[12]) if row[12] is not None else None,
+                    companyName=str(row[13] or ""),
+                    hasBestSelection=bool(row[14]),
+                    hasDdeGenerated=bool(row[15]),
                 )
             )
         return cards
@@ -225,4 +230,3 @@ class CardDAO:
 
         connection.close()
         return [str(row[0] or "") for row in rows if row and str(row[0] or "").strip()]
-

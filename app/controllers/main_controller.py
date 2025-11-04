@@ -29,6 +29,7 @@ from app.daos.session_pause_dao import SessionPauseDAO
 from app.daos.user_dao import UserDAO
 from app.services.auth_service import AuthService
 from app.services.ai_configuration_service import AIConfigurationService
+from app.services.card_ai_export_service import CardAIExportService
 from app.services.card_ai_service import CardAIService
 from app.services.browser_service import BrowserService
 from app.services.history_service import HistoryService
@@ -105,4 +106,5 @@ class MainController:
             ai_configuration_service,
             context_service=context_service,
         )
-        self.cardsAI = CardAIController(card_service)
+        export_service = CardAIExportService()
+        self.cardsAI = CardAIController(card_service, export_service)

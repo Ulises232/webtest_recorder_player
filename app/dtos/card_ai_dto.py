@@ -19,6 +19,8 @@ class CardDTO:
     updatedAt: Optional[datetime]
     ticketId: str
     branchKey: str
+    sprintId: Optional[int] = None
+    sprintName: str = ""
     incidentTypeId: Optional[int] = None
     incidentTypeName: str = ""
     companyId: Optional[int] = None

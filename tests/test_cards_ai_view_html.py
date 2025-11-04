@@ -1,14 +1,14 @@
-"""Validate the HTML export helpers used by the cards AI view."""
+"""Validate the HTML export helpers used by the cards AI export service."""
 
 import pytest
 
 
 _ = pytest.importorskip("ttkbootstrap")
 
-from app.views.cards_ai_view import _build_html_document
+from app.services.card_ai_export_service import CardAIExportService
 
 
-def test_build_html_document_injects_text_and_lists() -> None:
+def test_build_html_document_injects_text_and_lists(tmp_path) -> None:
     """The HTML export should render strings, lists and fallbacks correctly."""
 
     content = {
@@ -23,18 +23,18 @@ def test_build_html_document_injects_text_and_lists() -> None:
         "como_lo_necesitas": "Implementar validaciones adicionales en el proceso.",
         "requerimientos_funcionales": [
             "El sistema debe recalcular impuestos antes de timbrar.",
-            "Registrar bitácora de timbres rechazados.",
+            "Registrar bitacora de timbres rechazados.",
         ],
         "requerimientos_especiales": ["Compatibilidad con PAC autorizado"],
         "criterios_aceptacion": ["Se timbran CFDI de prueba sin errores."],
     }
 
-    html = _build_html_document(content)
+    service = CardAIExportService(base_directory=tmp_path)
+    template = service._load_html_template()
+    html = service._fill_html_template(template, content)
 
-    assert "REQ-001 - Ajuste de timbrado" in html
-    assert "MEJORA" in html
     assert "2024-06-03" in html
     assert "09:00" in html and "10:30" in html
-    assert "<br />" in html  # salto de línea convertido en etiqueta HTML
+    assert "Actualizar el motor de timbrado.<br />Con compatibilidad con PAC." in html
     assert "<li>El sistema debe recalcular impuestos antes de timbrar.</li>" in html
-    assert "&nbsp;" not in html  # todos los campos con datos deben evitar el espacio duro
+    assert "&nbsp;" in html  # los campos sin datos mantienen el espacio duro

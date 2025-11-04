@@ -9,6 +9,8 @@ LEGACY_APP_FOLDER_NAME = "ForgeBuild"
 SESSIONS_FOLDER_NAME = "sessions"
 EVIDENCE_FOLDER_NAME = "evidencia"
 LOGIN_CACHE_FILENAME = "login_cache.json"
+DDE_EXPORT_FOLDER_NAME = "DDEs"
+DDE_EXPORT_ENV_VAR = "DDE_EXPORT_DIR"
 
 
 def _resolveAppDataBase() -> Path:
@@ -57,3 +59,16 @@ def getLoginCachePath(create_parent: bool = True) -> Path:
     if create_parent:
         path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def getDdeExportBaseDirectory(create: bool = True) -> Path:
+    """Return the directory used to store exported DDE/HU documents."""
+
+    override = os.environ.get(DDE_EXPORT_ENV_VAR)
+    if override:
+        base_directory = Path(override).expanduser()
+    else:
+        base_directory = Path.home() / "Documents" / DDE_EXPORT_FOLDER_NAME
+    if create:
+        base_directory.mkdir(parents=True, exist_ok=True)
+    return base_directory

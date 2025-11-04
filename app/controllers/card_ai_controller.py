@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from app.dtos.ai_settings_dto import AIProviderRuntimeDTO
@@ -16,15 +17,21 @@ from app.dtos.card_ai_dto import (
     card_ai_request_from_dict,
 )
 from app.services.card_ai_service import CardAIService, CardAIServiceError
+from app.services.card_ai_export_service import (
+    CardAIExportFormat,
+    CardAIExportService,
+    CardAIExportServiceError,
+)
 
 
 class CardAIController:
     """Expose a simplified API tailored for the Tkinter views."""
 
-    def __init__(self, service: CardAIService) -> None:
-        """Store the service that performs the heavy lifting."""
+    def __init__(self, service: CardAIService, export_service: CardAIExportService) -> None:
+        """Store the services that perform the heavy lifting."""
 
         self._service = service
+        self._export_service = export_service
 
     def list_cards(self, filters: Dict[str, object]) -> List[CardDTO]:
         """Return cards matching the filters provided by the view."""
@@ -202,5 +209,18 @@ class CardAIController:
         try:
             return self._service.list_statuses()
         except CardAIServiceError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+    def export_output(
+        self,
+        card: CardDTO,
+        output: CardAIOutputDTO,
+        export_format: CardAIExportFormat,
+    ) -> Path:
+        """Persist the provided output using the structured directory layout."""
+
+        try:
+            return self._export_service.export_output(card, output, export_format)
+        except CardAIExportServiceError as exc:
             raise RuntimeError(str(exc)) from exc
 

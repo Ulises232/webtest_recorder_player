@@ -6,11 +6,9 @@ import json
 import re
 import threading
 from datetime import datetime
-from html import escape
-from importlib import resources
 from typing import Callable, Dict, List, Optional
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import messagebox, ttk
 
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *  # noqa: F401,F403
@@ -18,13 +16,10 @@ from ttkbootstrap.widgets import DateEntry
 
 from app.controllers.card_ai_controller import CardAIController
 from app.dtos.card_ai_dto import CardAIGenerationResultDTO, CardAIHistoryEntryDTO, CardDTO
+from app.services.card_ai_export_service import CardAIExportFormat
 
 
 TYPE_CHOICES = ("INCIDENCIA", "MEJORA", "HU")
-
-HTML_TEMPLATE_PACKAGE = "app.templates"
-HTML_TEMPLATE_NAME = "card_generation.html"
-
 
 def _format_datetime(value: Optional[datetime]) -> str:
     """Return a friendly formatted datetime string."""
@@ -54,184 +49,30 @@ def _progress_style(progress: tb.Progressbar, percentage: int) -> None:
         progress.configure(bootstyle="success")
 
 
-def _export_json(content: Dict[str, object], parent: tk.Misc) -> None:
-    """Prompt for a JSON path and save the provided document."""
+def _export_output(
+    controller: CardAIController,
+    card: CardDTO,
+    output: CardAIGenerationResultDTO | CardAIHistoryEntryDTO,
+    export_format: CardAIExportFormat,
+    parent: tk.Misc,
+) -> None:
+    """Delegate the export operation to the controller and notify the user."""
 
-    path = filedialog.asksaveasfilename(
-        parent=parent,
-        defaultextension=".json",
-        filetypes=[("JSON", "*.json")],
-        title="Exportar resultado a JSON",
-    )
-    if not path:
-        return
-    try:
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(content, handle, ensure_ascii=False, indent=2)
-    except OSError as exc:
-        messagebox.showerror("Error", f"No se pudo exportar el JSON:\n{exc}")
-    else:
-        messagebox.showinfo("Exportado", f"Archivo guardado en:\n{path}")
-
-
-def _export_markdown(content: Dict[str, object], parent: tk.Misc) -> None:
-    """Transform the JSON into Markdown and persist it to disk."""
-
-    path = filedialog.asksaveasfilename(
-        parent=parent,
-        defaultextension=".md",
-        filetypes=[("Markdown", "*.md")],
-        title="Exportar resultado a Markdown",
-    )
-    if not path:
-        return
-    try:
-        lines: List[str] = ["# Documento generado"]
-        for key, value in content.items():
-            lines.append(f"\n## {key}")
-            if isinstance(value, list):
-                for item in value:
-                    lines.append(f"- {item}")
-            else:
-                lines.append(str(value))
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write("\n".join(lines))
-    except OSError as exc:
-        messagebox.showerror("Error", f"No se pudo exportar el Markdown:\n{exc}")
-    else:
-        messagebox.showinfo("Exportado", f"Archivo guardado en:\n{path}")
-
-
-def _export_docx(content: Dict[str, object], parent: tk.Misc) -> None:
-    """Generate a minimal DOCX using python-docx if available."""
+    output_dto = output.output
 
     try:
-        from docx import Document  # type: ignore
-    except ImportError:
-        messagebox.showerror(
-            "Dependencia faltante",
-            "No se encontró la librería 'python-docx'. Instala la dependencia para exportar a DOCX.",
-        )
-        return
-
-    path = filedialog.asksaveasfilename(
-        parent=parent,
-        defaultextension=".docx",
-        filetypes=[("Documento Word", "*.docx")],
-        title="Exportar resultado a DOCX",
-    )
-    if not path:
-        return
-
-    try:
-        document = Document()
-        document.add_heading("Documento DDE/HU", level=1)
-        for key, value in content.items():
-            document.add_heading(str(key), level=2)
-            if isinstance(value, list):
-                for item in value:
-                    document.add_paragraph(str(item), style="List Bullet")
-            else:
-                document.add_paragraph(str(value))
-        document.save(path)
-    except Exception as exc:  # pragma: no cover - depende de la librería externa
-        messagebox.showerror("Error", f"No se pudo exportar el DOCX:\n{exc}")
-    else:
-        messagebox.showinfo("Exportado", f"Archivo guardado en:\n{path}")
-
-
-def _load_html_template() -> str:
-    """Retrieve the HTML template used for document exports."""
-
-    try:
-        template_resource = resources.files(HTML_TEMPLATE_PACKAGE).joinpath(HTML_TEMPLATE_NAME)
-    except ModuleNotFoundError as exc:  # pragma: no cover - configuración inválida
-        raise FileNotFoundError("No se encontró el paquete de plantillas HTML.") from exc
-
-    try:
-        with template_resource.open("r", encoding="utf-8") as handle:
-            return handle.read()
-    except FileNotFoundError as exc:
-        raise FileNotFoundError("No se encontró la plantilla HTML configurada.") from exc
-    except OSError as exc:  # pragma: no cover - errores del sistema de archivos
-        raise OSError("Ocurrió un error al leer la plantilla HTML.") from exc
-
-
-def _format_html_value(value: object) -> str:
-    """Convert plain text or lists into HTML-friendly blocks."""
-
-    if isinstance(value, list):
-        items = [escape(str(item)) for item in value if str(item).strip()]
-        if not items:
-            return "&nbsp;"
-        return "<ul>" + "".join(f"<li>{item}</li>" for item in items) + "</ul>"
-
-    if value is None:
-        return "&nbsp;"
-
-    text = escape(str(value).strip())
-    if not text:
-        return "&nbsp;"
-    return text.replace("\n", "<br />")
-
-
-def _build_html_document(content: Dict[str, object]) -> str:
-    """Render the HTML export by injecting the AI response into the template."""
-
-    template = _load_html_template()
-    placeholders: Dict[str, str] = {
-        "titulo": _format_html_value(content.get("titulo")),
-        "tipo": _format_html_value(content.get("tipo")),
-        "fecha": _format_html_value(content.get("fecha")),
-        "hora_inicio": _format_html_value(content.get("hora_inicio")),
-        "hora_fin": _format_html_value(content.get("hora_fin")),
-        "lugar": _format_html_value(content.get("lugar")),
-        "descripcion": _format_html_value(content.get("descripcion")),
-        "que_necesitas": _format_html_value(content.get("que_necesitas")),
-        "para_que_lo_necesitas": _format_html_value(content.get("para_que_lo_necesitas")),
-        "como_lo_necesitas": _format_html_value(content.get("como_lo_necesitas")),
-        "requerimientos_funcionales": _format_html_value(content.get("requerimientos_funcionales")),
-        "requerimientos_especiales": _format_html_value(content.get("requerimientos_especiales")),
-        "criterios_aceptacion": _format_html_value(content.get("criterios_aceptacion")),
-    }
-
-    rendered = template
-    for key, value in placeholders.items():
-        rendered = rendered.replace(f"{{{{{key}}}}}", value)
-
-    rendered = re.sub(r"\{\{[a-zA-Z0-9_]+\}\}", "&nbsp;", rendered)
-    return rendered
-
-
-def _export_html(content: Dict[str, object], parent: tk.Misc) -> None:
-    """Generate an HTML file using the configurable template."""
-
-    path = filedialog.asksaveasfilename(
-        parent=parent,
-        defaultextension=".html",
-        filetypes=[("HTML", "*.html")],
-        title="Exportar resultado a HTML",
-    )
-    if not path:
-        return
-
-    try:
-        document = _build_html_document(content)
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write(document)
-    except FileNotFoundError as exc:
+        path = controller.export_output(card, output_dto, export_format)
+    except RuntimeError as exc:
         messagebox.showerror("Error", str(exc))
-    except OSError as exc:
-        messagebox.showerror("Error", f"No se pudo exportar el HTML:\n{exc}")
-    else:
-        messagebox.showinfo("Exportado", f"Archivo guardado en:\n{path}")
+        return
+    messagebox.showinfo("Exportado", f"Archivo guardado en:\n{path}")
 
 
-def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -> None:
+def _show_history(parent: tk.Misc, controller: CardAIController, card: CardDTO) -> None:
     """Display a modal window with the generation history for a card."""
 
     try:
-        history_entries = controller.list_history(card_id)
+        history_entries = controller.list_history(card.cardId)
     except RuntimeError as exc:
         messagebox.showerror("Error", str(exc))
         return
@@ -345,32 +186,36 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
 
         entry = get_selected_entry()
         if not entry:
+            messagebox.showinfo("Historial", "Selecciona un resultado para exportar.")
             return
-        _export_json(entry.output.content, win)
+        _export_output(controller, card, entry, CardAIExportFormat.JSON, win)
 
     def export_selected_markdown() -> None:
         """Export the selected history entry to Markdown format."""
 
         entry = get_selected_entry()
         if not entry:
+            messagebox.showinfo("Historial", "Selecciona un resultado para exportar.")
             return
-        _export_markdown(entry.output.content, win)
+        _export_output(controller, card, entry, CardAIExportFormat.MARKDOWN, win)
 
     def export_selected_docx() -> None:
         """Export the selected history entry to DOCX format."""
 
         entry = get_selected_entry()
         if not entry:
+            messagebox.showinfo("Historial", "Selecciona un resultado para exportar.")
             return
-        _export_docx(entry.output.content, win)
+        _export_output(controller, card, entry, CardAIExportFormat.DOCX, win)
 
     def export_selected_html() -> None:
         """Export the selected history entry to HTML format."""
 
         entry = get_selected_entry()
         if not entry:
+            messagebox.showinfo("Historial", "Selecciona un resultado para exportar.")
             return
-        _export_html(entry.output.content, win)
+        _export_output(controller, card, entry, CardAIExportFormat.HTML, win)
 
     def delete_selected_entry() -> None:
         """Delete the selected history entry after confirmation."""
@@ -413,7 +258,7 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
             messagebox.showerror("Error", str(exc))
             return
         try:
-            history_entries = controller.list_history(card_id)
+            history_entries = controller.list_history(card.cardId)
         except RuntimeError as exc:
             messagebox.showerror("Error", str(exc))
             return
@@ -437,7 +282,7 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
             messagebox.showerror("Error", str(exc))
             return
         try:
-            history_entries = controller.list_history(card_id)
+            history_entries = controller.list_history(card.cardId)
         except RuntimeError as exc:
             messagebox.showerror("Error", str(exc))
             return
@@ -653,32 +498,34 @@ def _show_generation_result(
         actions,
         text="Exportar JSON",
         bootstyle=SECONDARY,
-        command=lambda: _export_json(result.output.content, win),
+        command=lambda: _export_output(controller, card, result, CardAIExportFormat.JSON, win),
     ).pack(side=LEFT)
     tb.Button(
         actions,
         text="Exportar Markdown",
         bootstyle=SECONDARY,
-        command=lambda: _export_markdown(result.output.content, win),
+        command=lambda: _export_output(
+            controller, card, result, CardAIExportFormat.MARKDOWN, win
+        ),
     ).pack(side=LEFT, padx=6)
     tb.Button(
         actions,
         text="Exportar DOCX",
         bootstyle=SECONDARY,
-        command=lambda: _export_docx(result.output.content, win),
+        command=lambda: _export_output(controller, card, result, CardAIExportFormat.DOCX, win),
     ).pack(side=LEFT, padx=6)
     tb.Button(
         actions,
         text="Exportar HTML",
         bootstyle=SECONDARY,
-        command=lambda: _export_html(result.output.content, win),
+        command=lambda: _export_output(controller, card, result, CardAIExportFormat.HTML, win),
     ).pack(side=LEFT, padx=6)
 
     tb.Button(
         actions,
         text="Historial",
         bootstyle=INFO,
-        command=lambda: _show_history(parent, controller, card.cardId),
+        command=lambda: _show_history(parent, controller, card),
     ).pack(side=RIGHT)
 
     running = tk.BooleanVar(value=False)
@@ -1238,7 +1085,7 @@ def build_cards_ai_view(
         text="Historial",
         bootstyle=INFO,
         state=tk.DISABLED,
-        command=lambda: _show_history(root, controller, selected_card[0].cardId)
+        command=lambda: _show_history(root, controller, selected_card[0])
         if selected_card
         else None,
     )
