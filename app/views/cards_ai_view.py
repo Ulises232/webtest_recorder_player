@@ -271,8 +271,7 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
 
     entries_map: Dict[str, CardAIHistoryEntryDTO] = {}
     managed_buttons: List[tk.Widget] = []
-    mark_best_button: Optional[tk.Button] = None
-    clear_best_button: Optional[tk.Button] = None
+    best_toggle_button: Optional[tk.Button] = None
 
     def get_selected_key() -> Optional[str]:
         """Return the identifier for the currently selected row."""
@@ -298,13 +297,26 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
         for button in managed_buttons:
             if button.winfo_exists():
                 button.configure(state=state)
-        if mark_best_button and mark_best_button.winfo_exists():
-            mark_best_button.configure(
-                state=tk.NORMAL if entry and not entry.output.isBest else tk.DISABLED
+        if not best_toggle_button or not best_toggle_button.winfo_exists():
+            return
+        if not entry:
+            best_toggle_button.configure(
+                state=tk.DISABLED,
+                text="Marcar como mejor",
+                bootstyle=SUCCESS,
             )
-        if clear_best_button and clear_best_button.winfo_exists():
-            clear_best_button.configure(
-                state=tk.NORMAL if entry and entry.output.isBest else tk.DISABLED
+            return
+        if entry.output.isBest:
+            best_toggle_button.configure(
+                state=tk.NORMAL,
+                text="Quitar marca mejor",
+                bootstyle=WARNING,
+            )
+        else:
+            best_toggle_button.configure(
+                state=tk.NORMAL,
+                text="Marcar como mejor",
+                bootstyle=SUCCESS,
             )
 
     def on_select(event: tk.Event | None) -> None:
@@ -384,15 +396,19 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
         populate_tree(history_entries)
         messagebox.showinfo("Historial", "El resultado se eliminó correctamente.")
 
-    def mark_selected_as_best() -> None:
-        """Mark the chosen entry as the preferred response."""
+    def toggle_selected_best_flag() -> None:
+        """Toggle the preferred flag for the selected entry."""
 
         nonlocal history_entries
         entry = get_selected_entry()
         if not entry:
             return
+        target_state = not entry.output.isBest
         try:
-            controller.mark_output_as_best(entry.output.outputId)
+            if target_state:
+                controller.mark_output_as_best(entry.output.outputId)
+            else:
+                controller.clear_output_best_flag(entry.output.outputId)
         except RuntimeError as exc:
             messagebox.showerror("Error", str(exc))
             return
@@ -402,27 +418,10 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
             messagebox.showerror("Error", str(exc))
             return
         populate_tree(history_entries, selected_output=entry.output.outputId)
-        messagebox.showinfo("Historial", "Se marcó la respuesta como mejor opción.")
-
-    def clear_selected_best_flag() -> None:
-        """Remove the preferred flag from the currently selected entry."""
-
-        nonlocal history_entries
-        entry = get_selected_entry()
-        if not entry or not entry.output.isBest:
-            return
-        try:
-            controller.clear_output_best_flag(entry.output.outputId)
-        except RuntimeError as exc:
-            messagebox.showerror("Error", str(exc))
-            return
-        try:
-            history_entries = controller.list_history(card_id)
-        except RuntimeError as exc:
-            messagebox.showerror("Error", str(exc))
-            return
-        populate_tree(history_entries, selected_output=entry.output.outputId)
-        messagebox.showinfo("Historial", "Se quitó la marca de mejor respuesta.")
+        if target_state:
+            messagebox.showinfo("Historial", "Se marcó la respuesta como mejor opción.")
+        else:
+            messagebox.showinfo("Historial", "Se quitó la marca de mejor respuesta.")
 
     def toggle_selected_dde() -> None:
         """Toggle the DDE generated flag for the selected entry."""
@@ -491,23 +490,14 @@ def _show_history(parent: tk.Misc, controller: CardAIController, card_id: int) -
     export_html_button.pack(side=LEFT, padx=6)
     managed_buttons.append(export_html_button)
 
-    mark_best_button = tb.Button(
+    best_toggle_button = tb.Button(
         actions,
         text="Marcar como mejor",
         bootstyle=SUCCESS,
-        command=mark_selected_as_best,
+        command=toggle_selected_best_flag,
         state=tk.DISABLED,
     )
-    mark_best_button.pack(side=RIGHT, padx=(0, 6))
-
-    clear_best_button = tb.Button(
-        actions,
-        text="Quitar marca mejor",
-        bootstyle=WARNING,
-        command=clear_selected_best_flag,
-        state=tk.DISABLED,
-    )
-    clear_best_button.pack(side=RIGHT, padx=(0, 6))
+    best_toggle_button.pack(side=RIGHT, padx=(0, 6))
 
     mark_dde_button = tb.Button(
         actions,
