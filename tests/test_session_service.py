@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pytest
 
@@ -32,6 +32,7 @@ class FakeSessionDAO:
         evidences_url: str,
         username: str,
         started_at: datetime,
+        card_id: Optional[int] = None,
     ) -> SessionDTO:
         session_id = self._next_id
         self._next_id += 1
@@ -41,6 +42,7 @@ class FakeSessionDAO:
             initialUrl=initial_url,
             docxUrl=docx_url,
             evidencesUrl=evidences_url,
+            cardId=card_id,
             durationSeconds=0,
             startedAt=started_at,
             endedAt=None,
@@ -61,6 +63,12 @@ class FakeSessionDAO:
 
     def get_session(self, session_id: int) -> SessionDTO:
         return self._sessions[session_id]
+
+    def get_session_by_card(self, card_id: int) -> Optional[SessionDTO]:
+        for dto in self._sessions.values():
+            if dto.cardId == card_id:
+                return dto
+        return None
 
 
 class FakeSessionEvidenceDAO:

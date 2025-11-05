@@ -61,15 +61,33 @@ class SessionService:
         docx_url: str,
         evidences_url: str,
         username: str,
+        card_id: Optional[int] = None,
     ) -> SessionDTO:
         """Create a new session and keep it as the active one."""
 
         if self._active_state is not None:
             raise SessionServiceError("Ya existe una sesión activa. Finalízala antes de iniciar otra.")
 
+        if card_id is not None:
+            try:
+                existing = self._session_dao.get_session_by_card(card_id)
+            except SessionDAOError as exc:
+                logger.error("No fue posible verificar la sesión asociada a la tarjeta %s: %s", card_id, exc)
+                raise SessionServiceError(str(exc)) from exc
+            if existing is not None:
+                raise SessionServiceError("Ya existe una sesión registrada para la tarjeta seleccionada.")
+
         started_at = self._utcnow()
         try:
-            session = self._session_dao.create_session(name, initial_url, docx_url, evidences_url, username, started_at)
+            session = self._session_dao.create_session(
+                name,
+                initial_url,
+                docx_url,
+                evidences_url,
+                username,
+                started_at,
+                card_id=card_id,
+            )
         except SessionDAOError as exc:
             logger.error("No fue posible crear la sesión de evidencias: %s", exc)
             raise SessionServiceError(str(exc)) from exc
@@ -89,6 +107,15 @@ class SessionService:
         if not self._active_state:
             return None
         return self._active_state.session
+
+    def get_session_by_card(self, card_id: int) -> Optional[SessionDTO]:
+        """Return the persisted session linked to the provided card identifier."""
+
+        try:
+            return self._session_dao.get_session_by_card(card_id)
+        except SessionDAOError as exc:
+            logger.error("No fue posible consultar la sesión asociada a la tarjeta %s: %s", card_id, exc)
+            raise SessionServiceError(str(exc)) from exc
 
     def list_sessions(self, username: Optional[str] = None, limit: int = 100) -> List[SessionDTO]:
         """Return the most recent sessions for the dashboard."""

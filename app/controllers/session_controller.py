@@ -44,6 +44,7 @@ class SessionController:
         initial_url: str,
         docx_url: str,
         evidences_url: str,
+        card_id: Optional[int] = None,
     ) -> Tuple[Optional[SessionDTO], Optional[str]]:
         """Start a new evidence session for the authenticated user."""
 
@@ -51,7 +52,23 @@ class SessionController:
         if not username:
             return None, "Debes iniciar sesión antes de crear una sesión de evidencias."
         try:
-            session = self._session_service.begin_session(name, initial_url, docx_url, evidences_url, username)
+            session = self._session_service.begin_session(
+                name,
+                initial_url,
+                docx_url,
+                evidences_url,
+                username,
+                card_id=card_id,
+            )
+        except SessionServiceError as exc:
+            return None, str(exc)
+        return session, None
+
+    def find_session_by_card(self, card_id: int) -> Tuple[Optional[SessionDTO], Optional[str]]:
+        """Return the recorder session associated with the given card if present."""
+
+        try:
+            session = self._session_service.get_session_by_card(card_id)
         except SessionServiceError as exc:
             return None, str(exc)
         return session, None

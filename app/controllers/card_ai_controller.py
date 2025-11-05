@@ -54,6 +54,15 @@ class CardAIController:
         elif dde_filter.startswith("sin"):
             dde_generated = False
 
+        tests_generated = None
+        tests_filter = (
+            str(filters.get("estadoPruebas")).strip().lower() if filters.get("estadoPruebas") else ""
+        )
+        if tests_filter.startswith("con"):
+            tests_generated = True
+        elif tests_filter.startswith("sin"):
+            tests_generated = False
+
         incident_type_id: Optional[int] = None
         if "tipoId" in filters:
             try:
@@ -83,6 +92,7 @@ class CardAIController:
             ddeGenerated=dde_generated,
             incidentTypeId=incident_type_id,
             companyId=company_id,
+            testsGenerated=tests_generated,
         )
         try:
             return self._service.list_cards(dto)

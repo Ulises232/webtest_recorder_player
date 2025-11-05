@@ -6,9 +6,11 @@
 - Columna de empresa, menu para ocultar/mostrar columnas y ordenamiento por encabezado en la cuadricula principal de tarjetas.
 - Edición manual de las respuestas generadas para `cards_ai_outputs` desde la ventana de resultado y el historial, incluyendo el guardado en la base de datos y la reutilización inmediata en exportaciones.
 - Servicio `CardAIExportService` que genera archivos JSON, Markdown, DOCX y HTML en `Documentos/DDEs`, organizado por empresa y sprint, con integración desde `CardAIController` y la vista de tarjetas.
+- Columna `card_id` en `recorder_sessions` con índice único condicional para vincular sesiones con tarjetas y consulta dedicada en servicios/controladores.
 
 ### Changed
 - La tabla de tarjetas ahora muestra el ticket_id, el tipo de incidente desde catalog_incidence_types y los filtros de status y empresa obtenidos con consultas a SQL Server.
+- La vista de Pruebas reutiliza la cuadrícula de tarjetas con la columna `Pruebas generadas` y su filtro, eliminando las columnas de mejor respuesta y DDE generada.
 ## [0.10.0] - 2024-06-09
 ### Added
 - Servicio `AIConfigurationService` con sus DAOs (`AISettingsDAO` y `AIProviderDAO`) para resolver proveedores de IA desde SQL Server, incluida la semilla automática de los cuatro proveedores soportados.

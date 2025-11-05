@@ -16,6 +16,7 @@ class SessionDTO:
     initialUrl: str
     docxUrl: str
     evidencesUrl: str
+    cardId: Optional[int]
     durationSeconds: int
     startedAt: datetime
     endedAt: Optional[datetime]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 import os
@@ -12,7 +13,9 @@ from tkinter import ttk
 
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *  # noqa: F401,F403
+from ttkbootstrap.widgets import DateEntry
 
+from app.dtos.card_ai_dto import CardDTO
 from app.dtos.session_dto import SessionDTO, SessionEvidenceDTO
 
 
@@ -78,6 +81,14 @@ class PruebasViewContext:
         self.refresh_controls_visibility()
 
 
+def _format_card_datetime(value: Optional[datetime]) -> str:
+    """Return a friendly formatted datetime string for the cards dashboard."""
+
+    if not value:
+        return ""
+    return value.strftime("%Y-%m-%d %H:%M")
+
+
 def build_pruebas_view(
     root: tk.Misc,
     parent: tb.Frame,
@@ -124,7 +135,7 @@ def build_pruebas_view(
         session["title"] = (base_var.get() or session.get("title", "")).strip() or session.get("title", "")
         session_saved["val"] = True
         status.set("💾 Sesión actualizada desde el editor.")
-        _refresh_sessions_table()
+        _refresh_cards_table()
 
     notebook = tb.Notebook(parent, bootstyle="secondary")
     notebook.pack(fill=BOTH, expand=YES)
@@ -219,15 +230,13 @@ def build_pruebas_view(
         foreground=[("active", "#2b2f4c"), ("pressed", "#1f2238")],
     )
 
-    header_bg = "#E8ECFF"
-    row_even_bg = "#ffffff"
-    row_odd_bg = "#f5f7fa"
+    cards_controller = getattr(controller, "cardsAI", None)
 
     dashboard_header = tb.Frame(dashboard_tab)
     dashboard_header.pack(fill=X, pady=(0, 16))
     tb.Label(
         dashboard_header,
-        text="Sesiones de pruebas",
+        text="Tarjetas disponibles",
         font=("Segoe UI", 16, "bold"),
     ).pack(side=LEFT)
 
@@ -250,6 +259,8 @@ def build_pruebas_view(
         except Exception:
             pass
         refresh_paths()
+        session["cardId"] = None
+        session["ticketId"] = None
         status.set("🆕 Prepara una nueva sesión de evidencias.")
 
     def _open_new_session_tab() -> None:
@@ -262,209 +273,390 @@ def build_pruebas_view(
         dashboard_header,
         text="🔄 Actualizar",
         style="CartoonGhost.TButton",
-        command=lambda: _refresh_sessions_table(),
+        command=lambda: _refresh_cards_table(),
         compound=LEFT,
     ).pack(side=RIGHT)
     tb.Button(
         dashboard_header,
-        text="✨ Crear sesión",
+        text="✨ Sesión manual",
         style="CartoonAccent.TButton",
         command=_open_new_session_tab,
         compound=LEFT,
     ).pack(side=RIGHT, padx=(0, 8))
 
-    table_container = tb.Frame(dashboard_tab)
-    table_container.pack(fill=BOTH, expand=YES)
+    filters_frame = tb.Frame(dashboard_tab, padding=(0, 0, 0, 12))
+    filters_frame.pack(fill=X)
 
-    header_frame = tk.Frame(table_container, bg=header_bg)
-    header_frame.pack(fill=X, padx=(0, 12))
-    header_frame.grid_columnconfigure(0, minsize=160)
-    header_frame.grid_columnconfigure(1, weight=1, minsize=240)
-    header_frame.grid_columnconfigure(2, minsize=160)
-    header_frame.grid_columnconfigure(3, minsize=340)
+    incident_type_options = []
+    if cards_controller:
+        try:
+            incident_type_options = cards_controller.list_incidence_types()
+        except RuntimeError as exc:
+            Messagebox.showwarning("Tarjetas", f"No fue posible cargar los tipos de incidente\n{exc}")
+            incident_type_options = []
+    status_options = []
+    if cards_controller:
+        try:
+            status_options = cards_controller.list_statuses()
+        except RuntimeError as exc:
+            Messagebox.showwarning("Tarjetas", f"No fue posible cargar los estatus\n{exc}")
+            status_options = []
+    company_options = []
+    if cards_controller:
+        try:
+            company_options = cards_controller.list_companies()
+        except RuntimeError as exc:
+            Messagebox.showwarning("Tarjetas", f"No fue posible cargar las empresas\n{exc}")
+            company_options = []
 
-    header_specs = (
-        ("Fecha", "center"),
-        ("Nombre", "w"),
-        ("Usuario", "center"),
-        ("Acciones", "e"),
+    incident_type_map = {option.name: option.optionId for option in incident_type_options}
+    incident_type_values = [""] + [option.name for option in incident_type_options]
+    status_values = [""] + status_options
+    company_map = {option.name: option.optionId for option in company_options}
+    company_values = [""] + [option.name for option in company_options]
+
+    tb.Label(filters_frame, text="Tipo incidente").grid(row=0, column=0, sticky="w")
+    tipo_var = tk.StringVar(value="")
+    tipo_box = ttk.Combobox(
+        filters_frame,
+        values=incident_type_values,
+        textvariable=tipo_var,
+        width=18,
+        state="readonly",
     )
-    for column_index, (title, anchor) in enumerate(header_specs):
-        header_label = tk.Label(
-            header_frame,
-            text=title,
-            bg=header_bg,
-            fg="#1f2240",
-            font=("Segoe UI", 10, "bold"),
-            anchor=anchor,
+    tipo_box.grid(row=1, column=0, sticky="we", padx=(0, 10))
+    if incident_type_values:
+        tipo_box.current(0)
+
+    tb.Label(filters_frame, text="Status").grid(row=0, column=1, sticky="w")
+    status_var = tk.StringVar(value="")
+    status_box = ttk.Combobox(
+        filters_frame,
+        values=status_values,
+        textvariable=status_var,
+        width=16,
+        state="readonly",
+    )
+    status_box.grid(row=1, column=1, sticky="we", padx=(0, 10))
+    if status_values:
+        status_box.current(0)
+
+    tb.Label(filters_frame, text="Empresa").grid(row=0, column=2, sticky="w")
+    company_var = tk.StringVar(value="")
+    company_box = ttk.Combobox(
+        filters_frame,
+        values=company_values,
+        textvariable=company_var,
+        width=22,
+        state="readonly",
+    )
+    company_box.grid(row=1, column=2, sticky="we", padx=(0, 10))
+    if company_values:
+        company_box.current(0)
+
+    tb.Label(filters_frame, text="Fecha inicio").grid(row=0, column=3, sticky="w")
+    start_var = DateEntry(filters_frame, dateformat="%Y-%m-%d")
+    start_var.grid(row=1, column=3, sticky="we", padx=(0, 10))
+    start_var.entry.delete(0, tk.END)
+
+    tb.Label(filters_frame, text="Fecha fin").grid(row=0, column=4, sticky="w")
+    end_var = DateEntry(filters_frame, dateformat="%Y-%m-%d")
+    end_var.grid(row=1, column=4, sticky="we", padx=(0, 10))
+    end_var.entry.delete(0, tk.END)
+
+    tb.Label(filters_frame, text="Buscar").grid(row=0, column=5, sticky="w")
+    search_var = tk.StringVar(value="")
+    search_entry = tb.Entry(filters_frame, textvariable=search_var)
+    search_entry.grid(row=1, column=5, sticky="we")
+
+    filters_frame.grid_columnconfigure(5, weight=1)
+
+    tests_filter_var = tk.StringVar(value="Todas")
+
+    table_frame = tb.Frame(dashboard_tab, padding=(0, 0, 0, 12))
+    table_frame.pack(fill=BOTH, expand=YES)
+
+    columns_config: Dict[str, Dict[str, object]] = {
+        "ticket": {"text": "Ticket", "width": 110, "anchor": "center"},
+        "titulo": {"text": "Titulo", "width": 360, "stretch": True},
+        "tipo": {"text": "Tipo incidente", "width": 180},
+        "status": {"text": "Status", "width": 140},
+        "empresa": {"text": "Empresa", "width": 200},
+        "actualizado": {"text": "Actualizado", "width": 160, "anchor": "center"},
+        "pruebas": {"text": "Pruebas generadas", "width": 160, "anchor": "center"},
+    }
+    columns = tuple(columns_config.keys())
+    tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=14)
+    tree["displaycolumns"] = columns
+
+    active_sort: Dict[str, Optional[str]] = {"column": None, "direction": None}
+    column_vars: Dict[str, tk.BooleanVar] = {}
+    selected_card: List[CardDTO] = []
+    current_cards: List[CardDTO] = []
+    generate_tests_button: Optional[tb.Button] = None
+    cards_status_label: Optional[tb.Label] = None
+    debounce_id: Optional[str] = None
+
+    for column_name, column_config in columns_config.items():
+        tree.heading(column_name, text=column_config["text"], command=lambda col=column_name: _sort_cards_tree(col))
+        tree.column(
+            column_name,
+            width=int(column_config.get("width", 120)),
+            anchor=column_config.get("anchor", tk.W),
+            stretch=bool(column_config.get("stretch", False)),
         )
-        header_label.grid(row=0, column=column_index, sticky="ew", padx=(16 if column_index == 0 else 8, 8), pady=12)
+    tree.tag_configure("pruebas", background="#e6f4ea")
 
-    sessions_canvas = tk.Canvas(
-        table_container,
-        highlightthickness=0,
-        background=row_even_bg,
-        borderwidth=0,
-    )
-    sessions_canvas.pack(side=LEFT, fill=BOTH, expand=YES, padx=(0, 12))
+    scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=tree.yview)
+    tree.configure(yscrollcommand=scrollbar.set)
+    tree.pack(side=LEFT, fill=BOTH, expand=YES)
+    scrollbar.pack(side=RIGHT, fill=Y)
+    bind_mousewheel(tree, tree.yview)
 
-    sessions_scroll = ttk.Scrollbar(table_container, orient="vertical", command=sessions_canvas.yview)
-    sessions_scroll.pack(side=RIGHT, fill=Y)
-    sessions_canvas.configure(yscrollcommand=sessions_scroll.set)
+    def _coerce_sort_value(value: str, column: str) -> object:
+        """Return a comparable value for sorting operations."""
 
-    sessions_rows_holder = tk.Frame(sessions_canvas, bg=row_even_bg)
-    sessions_rows_holder.grid_columnconfigure(0, weight=1)
-    sessions_window = sessions_canvas.create_window((0, 0), window=sessions_rows_holder, anchor="nw")
-
-    def _on_sessions_canvas_configure(event) -> None:
-        """Resize the table canvas content when the widget changes."""
-
-        try:
-            sessions_canvas.itemconfigure(sessions_window, width=event.width)
-        except Exception:
-            pass
-
-    def _update_sessions_scrollregion(_event) -> None:
-        """Sync the scrollable region with the content size."""
-
-        try:
-            sessions_canvas.configure(scrollregion=sessions_canvas.bbox("all"))
-        except Exception:
-            pass
-
-    sessions_canvas.bind("<Configure>", _on_sessions_canvas_configure, add="+")
-    sessions_rows_holder.bind("<Configure>", _update_sessions_scrollregion, add="+")
-    bind_mousewheel(sessions_canvas, sessions_canvas.yview)
-
-    def _refresh_sessions_table() -> None:
-        """Reload the table with the latest sessions from the service."""
-
-        for child in sessions_rows_holder.winfo_children():
+        if column == "actualizado" and value:
             try:
-                child.destroy()
-            except Exception:
-                pass
-        sessions, error = controller.sessions.list_sessions(limit=100)
-        if error:
-            status.set(f"⚠️ {error}")
+                return datetime.strptime(value, "%Y-%m-%d %H:%M")
+            except ValueError:
+                return value
+        if column == "ticket":
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return value
+        normalized = str(value).strip().lower()
+        if normalized in {"si", "no"}:
+            return 1 if normalized == "si" else 0
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return normalized
+
+    def _sort_cards_tree(column: str, force_direction: Optional[str] = None) -> None:
+        """Sort the tree rows using the provided column."""
+
+        direction = force_direction
+        if direction is None:
+            if active_sort["column"] == column and active_sort["direction"] == "asc":
+                direction = "desc"
+            else:
+                direction = "asc"
+        active_sort["column"] = column
+        active_sort["direction"] = direction
+        items = [(tree.set(item_id, column), item_id) for item_id in tree.get_children("")]
+        reverse = direction == "desc"
+        try:
+            items.sort(key=lambda item: _coerce_sort_value(item[0], column), reverse=reverse)
+        except TypeError:
+            items.sort(key=lambda item: str(item[0]).lower(), reverse=reverse)
+        for index, (_, item_id) in enumerate(items):
+            tree.move(item_id, "", index)
+
+    def _parse_date(entry: DateEntry) -> Optional[datetime]:
+        """Return the selected date or `None` when the field is empty."""
+
+        value = entry.entry.get().strip()
+        if not value:
+            return None
+        try:
+            return datetime.strptime(value + " 00:00", "%Y-%m-%d %H:%M")
+        except ValueError:
+            return None
+
+    def _refresh_cards_table() -> None:
+        """Load the cards from the controller applying filters."""
+
+        if cards_controller is None:
+            if cards_status_label is not None:
+                cards_status_label.configure(text="Controlador de tarjetas no disponible.")
+            status.set("⚠️ No fue posible acceder al listado de tarjetas.")
             return
-        current_username = _get_current_username().lower()
-        for index, session_obj in enumerate(sessions, start=1):
-            is_owner = session_obj.username.lower() == current_username and bool(current_username)
-            row_bg = row_even_bg if index % 2 == 0 else row_odd_bg
-            row_frame = tk.Frame(sessions_rows_holder, bg=row_bg)
-            row_frame.grid(row=index - 1, column=0, sticky="ew", pady=(0, 8), padx=(0, 12))
-            row_frame.grid_columnconfigure(0, minsize=160)
-            row_frame.grid_columnconfigure(1, weight=1, minsize=240)
-            row_frame.grid_columnconfigure(2, minsize=160)
-            row_frame.grid_columnconfigure(3, minsize=340)
 
-            tk.Label(
-                row_frame,
-                text=format_timestamp(session_obj.startedAt),
-                bg=row_bg,
-                fg="#1f2230",
-                font=("Segoe UI", 10),
-                anchor="center",
-            ).grid(row=0, column=0, sticky="ew", padx=(16, 8), pady=12)
+        selected_type = tipo_var.get().strip()
+        selected_status = status_var.get().strip()
+        selected_company = company_var.get().strip()
+        filters: Dict[str, object] = {
+            "fechaInicio": _parse_date(start_var),
+            "fechaFin": _parse_date(end_var),
+            "busqueda": search_var.get().strip() or None,
+        }
+        tests_filter_value = tests_filter_var.get().strip().lower()
+        if tests_filter_value and tests_filter_value != "todas":
+            filters["estadoPruebas"] = tests_filter_var.get()
+        if selected_type:
+            filters["tipoId"] = incident_type_map.get(selected_type)
+        if selected_status:
+            filters["status"] = selected_status
+        if selected_company:
+            filters["empresaId"] = company_map.get(selected_company)
+        try:
+            cards = cards_controller.list_cards(filters)
+        except RuntimeError as exc:
+            Messagebox.showerror("Tarjetas", str(exc))
+            return
 
-            tk.Label(
-                row_frame,
-                text=session_obj.name,
-                bg=row_bg,
-                fg="#1f2230",
-                font=("Segoe UI", 10),
-                anchor="w",
-            ).grid(row=0, column=1, sticky="ew", padx=8, pady=12)
+        current_cards[:] = cards
+        selected_card.clear()
+        tree.delete(*tree.get_children(""))
 
-            tk.Label(
-                row_frame,
-                text=session_obj.username,
-                bg=row_bg,
-                fg="#1f2230",
-                font=("Segoe UI", 10),
-                anchor="center",
-            ).grid(row=0, column=2, sticky="ew", padx=8, pady=12)
-
-            actions_frame = tk.Frame(row_frame, bg=row_bg)
-            actions_frame.grid(row=0, column=3, sticky="e", padx=(8, 16))
-
-            def _make_action_button(label: str, handler: Callable[[], None], enabled: bool = True) -> tb.Button:
-                """Create a blue-styled action button for the dashboard table."""
-
-                btn = tb.Button(
-                    actions_frame,
-                    text=label,
-                    style="CartoonAccentSlim.TButton",
-                    command=handler,
-                    width=9,
-                )
-                if not enabled:
-                    btn.configure(state="disabled")
-                btn.pack(side=LEFT, padx=4)
-                return btn
-
-            _make_action_button(
-                "Ver",
-                handler=lambda obj=session_obj: _view_session_details(obj),
+        for card in cards:
+            tags_list: List[str] = []
+            if card.hasTestsGenerated:
+                tags_list.append("pruebas")
+            formatted_date = _format_card_datetime(card.updatedAt or card.createdAt)
+            tree.insert(
+                "",
+                "end",
+                iid=str(card.cardId),
+                values=(
+                    card.ticketId or str(card.cardId),
+                    card.title,
+                    card.incidentTypeName or "",
+                    card.status,
+                    card.companyName or "",
+                    formatted_date,
+                    "Si" if card.hasTestsGenerated else "No",
+                ),
+                tags=tuple(tags_list),
             )
+        if active_sort["column"] and active_sort["direction"]:
+            _sort_cards_tree(active_sort["column"], force_direction=active_sort["direction"])
+        if generate_tests_button is not None:
+            generate_tests_button.configure(state=tk.DISABLED)
+        if cards_status_label is not None:
+            cards_status_label.configure(text=f"{len(cards)} tarjeta(s) encontradas.")
+        status.set(f"🗂️ {len(cards)} tarjeta(s) encontradas.")
 
-            _make_action_button(
-                "Editar",
-                handler=lambda obj=session_obj: _open_session_editor(obj),
-                enabled=is_owner,
-            )
+    def _on_card_select(_event: tk.Event) -> None:
+        """Enable actions when a card row is selected."""
 
-            _make_action_button(
-                "Eliminar",
-                handler=lambda obj=session_obj: _confirm_delete_session(obj),
-                enabled=is_owner,
-            )
+        selection = tree.selection()
+        if not selection:
+            selected_card.clear()
+            if generate_tests_button is not None:
+                generate_tests_button.configure(state=tk.DISABLED)
+            return
+        try:
+            card_id = int(selection[0])
+        except ValueError:
+            selected_card.clear()
+            if generate_tests_button is not None:
+                generate_tests_button.configure(state=tk.DISABLED)
+            return
+        for card in current_cards:
+            if card.cardId == card_id:
+                selected_card[:] = [card]
+                break
+        state = tk.NORMAL if selected_card else tk.DISABLED
+        if generate_tests_button is not None:
+            generate_tests_button.configure(state=state)
 
-            _make_action_button(
-                "Descargar",
-                handler=lambda obj=session_obj: _handle_download(obj),
-            )
+    def _toggle_column(column: str) -> None:
+        """Hide or show the requested column ensuring at least one stays visible."""
 
-            if not is_owner:
-                note_label = tk.Label(
-                    actions_frame,
-                    text="Solo propietario",
-                    bg=row_bg,
-                    fg="#6C63FF",
-                    font=("Segoe UI", 8, "italic"),
-                    anchor="e",
-                )
-                note_label.pack(anchor="e", pady=(6, 0))
-        if sessions:
-            status.set(f"📋 {len(sessions)} sesiones cargadas.")
-        else:
-            status.set("📋 No hay sesiones registradas todavía.")
+        visible_columns = [name for name in columns if column_vars[name].get()]
+        if not visible_columns:
+            column_vars[column].set(True)
+            Messagebox.showinfo("Columnas", "Debe permanecer al menos una columna visible.")
+            return
+        tree["displaycolumns"] = visible_columns
 
-    def _view_session_details(session_obj) -> None:
-        """Display a read-only summary for the selected session."""
+    def _schedule_cards_refresh(*_args: object) -> None:
+        """Apply debounce to the search entry."""
 
-        win = tb.Toplevel(root)
-        win.title(f"Sesión: {session_obj.name}")
-        win.transient(root)
-        win.grab_set()
-        frm = tb.Frame(win, padding=16)
-        frm.pack(fill=BOTH, expand=YES)
-        tb.Label(frm, text=session_obj.name, font=("Segoe UI", 14, "bold")).pack(anchor=W, pady=(0, 12))
-        details = (
-            ("Fecha de inicio", format_timestamp(session_obj.startedAt)),
-            ("Fecha de cierre", format_timestamp(session_obj.endedAt)),
-            ("Usuario", session_obj.username),
-            ("URL inicial", session_obj.initialUrl),
-            ("Documento", session_obj.docxUrl),
-            ("Carpeta evidencias", session_obj.evidencesUrl),
+        nonlocal debounce_id
+        if debounce_id is not None:
+            dashboard_tab.after_cancel(debounce_id)
+        debounce_id = dashboard_tab.after(300, _refresh_cards_table)
+
+    def _prepare_card_session() -> None:
+        """Prepare the evidence session inputs based on the selected card."""
+
+        if not selected_card:
+            Messagebox.showwarning("Tarjetas", "Selecciona una tarjeta para continuar.")
+            return
+        card = selected_card[0]
+        existing_session, lookup_error = controller.sessions.find_session_by_card(card.cardId)
+        if lookup_error:
+            Messagebox.showerror("Sesión", lookup_error)
+            return
+        if existing_session:
+            status.set(f"ℹ️ Reutilizando la sesión existente para {card.ticketId or card.cardId}.")
+            _open_session_editor(existing_session)
+            return
+        if session_state["active"]:
+            Messagebox.showwarning("Sesión", "Termina la sesión activa antes de iniciar otra.")
+            return
+        card_base = controller.naming.slugify_for_windows(card.title or card.ticketId or f"card-{card.cardId}") or f"card-{card.cardId}"
+        previous_auto_state = auto_paths_state.get("enabled", True)
+        auto_paths_state["enabled"] = True
+        try:
+            base_var.set(card_base)
+        finally:
+            auto_paths_state["enabled"] = previous_auto_state
+        prev_base["val"] = controller.naming.slugify_for_windows(base_var.get() or card_base)
+        session["title"] = card.title or session.get("title", "Incidencia")
+        session["cardId"] = card.cardId
+        session["ticketId"] = card.ticketId
+        session_saved["val"] = False
+        status.set(f"🧪 Preparando sesión para la tarjeta {card.ticketId or card.cardId}.")
+        if cards_status_label is not None:
+            cards_status_label.configure(text=f"Tarjeta seleccionada: {card.ticketId or card.cardId}")
+        notebook.select(session_tab)
+        notebook.focus_set()
+        if Messagebox.askyesno("Sesión", f"¿Deseas iniciar una sesión de evidencias para '{card.title}' ahora?"):
+            start_evidence_session()
+
+    actions_frame = tb.Frame(dashboard_tab, padding=(0, 12, 0, 0))
+    actions_frame.pack(fill=X)
+    cards_status_label = tb.Label(actions_frame, text="Selecciona una tarjeta para comenzar.", bootstyle=SECONDARY)
+    cards_status_label.pack(side=LEFT)
+
+    column_button = ttk.Menubutton(actions_frame, text="Columnas")
+    column_menu = tk.Menu(column_button, tearoff=False)
+    column_button["menu"] = column_menu
+    for column_name, column_config in columns_config.items():
+        var = tk.BooleanVar(value=True)
+        column_vars[column_name] = var
+        column_menu.add_checkbutton(
+            label=column_config["text"],
+            variable=var,
+            command=lambda col=column_name: _toggle_column(col),
         )
-        for label, value in details:
-            row = tb.Frame(frm)
-            row.pack(fill=X, pady=4)
-            tb.Label(row, text=f"{label}:", font=("Segoe UI", 10, "bold"), width=18, anchor=E).pack(side=LEFT)
-            tb.Label(row, text=value or "", font=("Segoe UI", 10), anchor=W, wraplength=520, justify=LEFT).pack(side=LEFT, fill=X, expand=YES, padx=(8, 0))
-        tb.Button(frm, text="Cerrar", command=win.destroy, bootstyle=SECONDARY, width=18).pack(anchor=E, pady=(16, 0))
+
+    generate_tests_button = tb.Button(
+        actions_frame,
+        text="Generar pruebas",
+        bootstyle=PRIMARY,
+        state=tk.DISABLED,
+        command=_prepare_card_session,
+    )
+    generate_tests_button.pack(side=RIGHT)
+    column_button.pack(side=RIGHT, padx=(0, 6))
+
+    tree.bind("<<TreeviewSelect>>", _on_card_select)
+
+    for widget in (tipo_box, status_box, company_box):
+        widget.bind("<<ComboboxSelected>>", lambda *_: _refresh_cards_table(), add="+")
+    start_var.bind("<<DateEntrySelected>>", lambda *_: _refresh_cards_table(), add="+")
+    end_var.bind("<<DateEntrySelected>>", lambda *_: _refresh_cards_table(), add="+")
+    search_var.trace_add("write", lambda *_: _schedule_cards_refresh())
+
+    tb.Label(filters_frame, text="Pruebas generadas").grid(row=2, column=0, sticky="w", pady=(8, 0))
+    tests_filter_box = ttk.Combobox(
+        filters_frame,
+        values=("Todas", "Con pruebas generadas", "Sin pruebas generadas"),
+        textvariable=tests_filter_var,
+        state="readonly",
+        width=22,
+    )
+    tests_filter_box.grid(row=3, column=0, sticky="we", padx=(0, 10))
+    tests_filter_box.current(0)
+
+    tests_filter_box.bind("<<ComboboxSelected>>", lambda *_: _refresh_cards_table(), add="+")
+    _refresh_cards_table()
 
     def _map_evidence_to_step(evidence: SessionEvidenceDTO) -> Dict[str, object]:
         """Translate a persisted evidence to the in-memory representation."""
@@ -498,6 +690,8 @@ def build_pruebas_view(
         if not dashboard_edit_state.get("sessionId"):
             return
         dashboard_edit_state["sessionId"] = None
+        session["cardId"] = None
+        session["ticketId"] = None
         try:
             controller.sessions.clear_active_session()
         except Exception:
@@ -542,6 +736,7 @@ def build_pruebas_view(
         prev_base["val"] = controller.naming.slugify_for_windows(base_var.get() or "reporte")
         session["title"] = loaded_session.name or ""
         session["sessionId"] = loaded_session.sessionId
+        session["cardId"] = loaded_session.cardId
         _populate_session_from_evidences(evidences)
         session_saved["val"] = True
 
@@ -575,7 +770,7 @@ def build_pruebas_view(
             Messagebox.showerror("Sesión", error)
             return
         status.set("🗑️ Sesión eliminada.")
-        _refresh_sessions_table()
+        _refresh_cards_table()
 
     def _handle_download(session_obj) -> None:
         """Placeholder action for the future download workflow."""
@@ -585,7 +780,7 @@ def build_pruebas_view(
             "La descarga de sesiones estará disponible próximamente.",
         )
 
-    _refresh_sessions_table()
+    _refresh_cards_table()
 
     auto_paths_state = {"enabled": True}
 
@@ -632,7 +827,7 @@ def build_pruebas_view(
     
     session_saved = {"val": False}
     
-    session = {"title": "Incidencia", "steps": [], "sessionId": None}
+    session = {"title": "Incidencia", "steps": [], "sessionId": None, "cardId": None, "ticketId": None}
     session_state = {"active": False, "paused": False, "timerJob": None}
     timer_var = tk.StringVar(value=format_elapsed(0))
     evidence_tree_ref: dict[str, Optional[ttk.Treeview]] = {"tree": None}
@@ -758,6 +953,7 @@ def build_pruebas_view(
             (url_var.get() or controller.DEFAULT_URL).strip() or controller.DEFAULT_URL,
             str(doc_path),
             str(evidence_path),
+            session.get("cardId"),
         )
         if error:
             Messagebox.showerror("Sesión", error)

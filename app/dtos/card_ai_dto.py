@@ -27,6 +27,7 @@ class CardDTO:
     companyName: str = ""
     hasBestSelection: bool = False
     hasDdeGenerated: bool = False
+    hasTestsGenerated: bool = False
 
 
 @dataclass
@@ -42,6 +43,7 @@ class CardFiltersDTO:
     ddeGenerated: Optional[bool] = None
     incidentTypeId: Optional[int] = None
     companyId: Optional[int] = None
+    testsGenerated: Optional[bool] = None
 
 
 @dataclass

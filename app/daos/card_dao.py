@@ -73,6 +73,11 @@ class CardDAO:
             conditions.append(
                 f"{comparator} (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.dde_generated = 1)"
             )
+        if filters.testsGenerated is not None:
+            comparator = "EXISTS" if filters.testsGenerated else "NOT EXISTS"
+            conditions.append(
+                f"{comparator} (SELECT 1 FROM dbo.recorder_sessions rs WHERE rs.card_id = c.id)"
+            )
         if filters.incidentTypeId is not None:
             conditions.append("c.incidence_type_id = %s")
             params.append(filters.incidentTypeId)
@@ -99,7 +104,8 @@ class CardDAO:
             " c.company_id,"
             " COALESCE(cc.name, ''),"
             " CASE WHEN EXISTS (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.is_best = 1) THEN 1 ELSE 0 END,"
-            " CASE WHEN EXISTS (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.dde_generated = 1) THEN 1 ELSE 0 END"
+            " CASE WHEN EXISTS (SELECT 1 FROM dbo.cards_ai_outputs o WHERE o.card_id = c.id AND o.dde_generated = 1) THEN 1 ELSE 0 END,"
+            " CASE WHEN EXISTS (SELECT 1 FROM dbo.recorder_sessions rs WHERE rs.card_id = c.id) THEN 1 ELSE 0 END"
             " FROM dbo.cards c"
             " LEFT JOIN dbo.catalog_incidence_types cit ON cit.id = c.incidence_type_id"
             " LEFT JOIN dbo.catalog_companies cc ON cc.id = c.company_id"
@@ -141,6 +147,7 @@ class CardDAO:
                     companyName=str(row[13] or ""),
                     hasBestSelection=bool(row[14]),
                     hasDdeGenerated=bool(row[15]),
+                    hasTestsGenerated=bool(row[16]),
                 )
             )
         return cards

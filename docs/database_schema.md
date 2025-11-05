@@ -58,6 +58,7 @@ CREATE TABLE dbo.recorder_sessions (
     initial_url NVARCHAR(2048) NULL,
     docx_url NVARCHAR(2048) NULL,
     evidences_url NVARCHAR(2048) NULL,
+    card_id INT NULL,
     duration_seconds INT NOT NULL DEFAULT 0,
     started_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
     ended_at DATETIME2(0) NULL,
@@ -68,6 +69,9 @@ CREATE TABLE dbo.recorder_sessions (
 
 CREATE INDEX ix_recorder_sessions_started_at
     ON dbo.recorder_sessions (started_at DESC, session_id DESC);
+
+CREATE UNIQUE INDEX ux_recorder_sessions_card
+    ON dbo.recorder_sessions (card_id) WHERE card_id IS NOT NULL;
 
 CREATE TABLE dbo.recorder_session_evidences (
     evidence_id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,

@@ -29,10 +29,10 @@ class SessionDAO:
     def _row_to_dto(row: tuple) -> SessionDTO:
         """Convert a database row into a session DTO."""
 
-        started_raw = row[6]
-        ended_raw = row[7]
-        created_raw = row[9]
-        updated_raw = row[10]
+        started_raw = row[7]
+        ended_raw = row[8]
+        created_raw = row[10]
+        updated_raw = row[11]
         started_at = (
             started_raw
             if isinstance(started_raw, datetime)
@@ -59,10 +59,11 @@ class SessionDAO:
             initialUrl=str(row[2] or ""),
             docxUrl=str(row[3] or ""),
             evidencesUrl=str(row[4] or ""),
-            durationSeconds=int(row[5] or 0),
+            cardId=int(row[5]) if row[5] is not None else None,
+            durationSeconds=int(row[6] or 0),
             startedAt=started_at,
             endedAt=ended_at,
-            username=str(row[8] or ""),
+            username=str(row[9] or ""),
             createdAt=created_at,
             updatedAt=updated_at,
         )
@@ -94,6 +95,7 @@ class SessionDAO:
                         initial_url NVARCHAR(2048) NULL,
                         docx_url NVARCHAR(2048) NULL,
                         evidences_url NVARCHAR(2048) NULL,
+                        card_id INT NULL,
                         duration_seconds INT NOT NULL DEFAULT 0,
                         started_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
                         ended_at DATETIME2(0) NULL,
@@ -103,6 +105,25 @@ class SessionDAO:
                     );
                     CREATE INDEX ix_recorder_sessions_started_at
                         ON dbo.recorder_sessions (started_at DESC, session_id DESC);
+                END
+                """
+            )
+            cursor.execute(
+                """
+                IF COL_LENGTH('dbo.recorder_sessions', 'card_id') IS NULL
+                BEGIN
+                    ALTER TABLE dbo.recorder_sessions ADD card_id INT NULL;
+                END;
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM sys.indexes
+                    WHERE name = 'ux_recorder_sessions_card'
+                    AND object_id = OBJECT_ID('dbo.recorder_sessions')
+                )
+                BEGIN
+                    CREATE UNIQUE INDEX ux_recorder_sessions_card
+                        ON dbo.recorder_sessions (card_id)
+                        WHERE card_id IS NOT NULL;
                 END
                 """
             )
@@ -126,6 +147,7 @@ class SessionDAO:
         evidences_url: str,
         username: str,
         started_at: datetime,
+        card_id: Optional[int] = None,
     ) -> SessionDTO:
         """Insert a new session row and return the created DTO."""
 
@@ -141,11 +163,11 @@ class SessionDAO:
             cursor.execute(
                 (
                     "INSERT INTO dbo.recorder_sessions "
-                    "(name, initial_url, docx_url, evidences_url, duration_seconds, started_at, ended_at, username, created_at, updated_at) "
-                    "VALUES (%s, %s, %s, %s, 0, %s, NULL, %s, %s, %s); "
+                    "(name, initial_url, docx_url, evidences_url, card_id, duration_seconds, started_at, ended_at, username, created_at, updated_at) "
+                    "VALUES (%s, %s, %s, %s, %s, 0, %s, NULL, %s, %s, %s); "
                     "SELECT CAST(SCOPE_IDENTITY() AS INT);"
                 ),
-                (name, initial_url, docx_url, evidences_url, started_at, username, created_at, created_at),
+                (name, initial_url, docx_url, evidences_url, card_id, started_at, username, created_at, created_at),
             )
             row = cursor.fetchone()
             connection.commit()
@@ -165,6 +187,7 @@ class SessionDAO:
             initialUrl=initial_url,
             docxUrl=docx_url,
             evidencesUrl=evidences_url,
+            cardId=card_id,
             durationSeconds=0,
             startedAt=started_at,
             endedAt=None,
@@ -252,7 +275,7 @@ class SessionDAO:
             cursor = connection.cursor()
             cursor.execute(
                 (
-                    "SELECT session_id, name, initial_url, docx_url, evidences_url, duration_seconds, "
+                    "SELECT session_id, name, initial_url, docx_url, evidences_url, card_id, duration_seconds, "
                     "started_at, ended_at, username, created_at, updated_at "
                     "FROM dbo.recorder_sessions WHERE session_id = %s"
                 ),
@@ -262,6 +285,36 @@ class SessionDAO:
         except Exception as exc:  # pragma: no cover
             connection.close()
             raise SessionDAOError("No fue posible consultar la sesión solicitada.") from exc
+
+        connection.close()
+        if not row:
+            return None
+
+        return self._row_to_dto(row)
+
+    def get_session_by_card(self, card_id: int) -> Optional[SessionDTO]:
+        """Return the recorder session associated with a specific card."""
+
+        self._ensure_schema()
+        try:
+            connection = self._connection_factory()
+        except DatabaseConnectorError as exc:  # pragma: no cover
+            raise SessionDAOError(str(exc)) from exc
+
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                (
+                    "SELECT session_id, name, initial_url, docx_url, evidences_url, card_id, duration_seconds, "
+                    "started_at, ended_at, username, created_at, updated_at "
+                    "FROM dbo.recorder_sessions WHERE card_id = %s"
+                ),
+                (card_id,),
+            )
+            row = cursor.fetchone()
+        except Exception as exc:  # pragma: no cover
+            connection.close()
+            raise SessionDAOError("No fue posible consultar la sesión asociada a la tarjeta.") from exc
 
         connection.close()
         if not row:
@@ -281,8 +334,8 @@ class SessionDAO:
         try:
             cursor = connection.cursor()
             clauses = [
-                "SELECT session_id, name, initial_url, docx_url, evidences_url, duration_seconds,",
-                "started_at, ended_at, username, created_at, updated_at",
+                "SELECT session_id, name, initial_url, docx_url, evidences_url, card_id, duration_seconds,",
+                "       started_at, ended_at, username, created_at, updated_at",
                 "FROM dbo.recorder_sessions",
             ]
             params: List[object] = []
