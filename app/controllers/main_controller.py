@@ -26,6 +26,7 @@ from app.daos.card_dao import CardDAO
 from app.daos.history_dao import HistoryDAO
 from app.daos.session_dao import SessionDAO
 from app.daos.session_pause_dao import SessionPauseDAO
+from app.daos.session_evidence_asset_dao import SessionEvidenceAssetDAO
 from app.daos.user_dao import UserDAO
 from app.services.auth_service import AuthService
 from app.services.ai_configuration_service import AIConfigurationService
@@ -75,6 +76,7 @@ class MainController:
             SessionDAO(session_connector),
             SessionEvidenceDAO(session_connector),
             SessionPauseDAO(session_connector),
+            SessionEvidenceAssetDAO(session_connector),
         )
         self.sessions = SessionController(
             session_service,

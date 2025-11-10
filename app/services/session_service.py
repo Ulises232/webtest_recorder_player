@@ -11,7 +11,16 @@ from typing import List, Optional
 from app.daos.evidence_dao import SessionEvidenceDAO, SessionEvidenceDAOError
 from app.daos.session_dao import SessionDAO, SessionDAOError
 from app.daos.session_pause_dao import SessionPauseDAO, SessionPauseDAOError
-from app.dtos.session_dto import SessionDTO, SessionEvidenceDTO, SessionPauseDTO
+from app.daos.session_evidence_asset_dao import (
+    SessionEvidenceAssetDAO,
+    SessionEvidenceAssetDAOError,
+)
+from app.dtos.session_dto import (
+    SessionDTO,
+    SessionEvidenceAssetDTO,
+    SessionEvidenceDTO,
+    SessionPauseDTO,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -40,12 +49,14 @@ class SessionService:
         session_dao: SessionDAO,
         evidence_dao: SessionEvidenceDAO,
         pause_dao: SessionPauseDAO,
+        asset_dao: SessionEvidenceAssetDAO,
     ) -> None:
         """Store the DAO dependencies and reset the active state."""
 
         self._session_dao = session_dao
         self._evidence_dao = evidence_dao
         self._pause_dao = pause_dao
+        self._asset_dao = asset_dao
         self._active_state: Optional[ActiveSessionState] = None
 
     @staticmethod
@@ -53,6 +64,24 @@ class SessionService:
         """Return the current UTC timestamp with second precision."""
 
         return datetime.now(timezone.utc).replace(microsecond=0)
+
+    def _attach_assets_metadata(self, session_id: int, evidences: List[SessionEvidenceDTO]) -> None:
+        """Populate the assets collection for the provided evidences."""
+
+        if not evidences:
+            return
+        try:
+            assets_by_evidence = self._asset_dao.list_by_session(session_id)
+        except SessionEvidenceAssetDAOError as exc:
+            logger.warning(
+                "No se pudieron obtener las capturas adicionales de la sesion %s: %s",
+                session_id,
+                exc,
+            )
+            return
+        for evidence in evidences:
+            key = evidence.evidenceId or 0
+            evidence.assets = list(assets_by_evidence.get(key, []))
 
     def begin_session(
         self,
@@ -330,8 +359,48 @@ class SessionService:
             logger.error("No se pudo guardar la evidencia para la sesión %s: %s", state.session.sessionId, exc)
             raise SessionServiceError(str(exc)) from exc
 
+        try:
+            asset = self._asset_dao.create_asset(
+                evidence.evidenceId or 0,
+                file_name,
+                str(file_path),
+                0,
+                now,
+            )
+            evidence.assets = [asset]
+        except SessionEvidenceAssetDAOError as exc:
+            logger.error(
+                "No se pudo registrar la captura principal para la evidencia %s: %s",
+                evidence.evidenceId,
+                exc,
+            )
+            raise SessionServiceError(str(exc)) from exc
+
         state.lastEvidenceAt = now
         return evidence
+
+    def attach_evidence_asset(self, evidence_id: int, file_path: Path) -> SessionEvidenceAssetDTO:
+        """Append a new capture to an existing evidence."""
+
+        state = self._ensure_session_running()
+        if state.activePause is not None:
+            raise SessionServiceError("No se pueden adjuntar capturas mientras la sesión está en pausa.")
+
+        now = self._utcnow()
+        try:
+            position = self._asset_dao.get_next_position(evidence_id)
+            asset = self._asset_dao.create_asset(
+                evidence_id,
+                file_path.name,
+                str(file_path),
+                position,
+                now,
+            )
+        except SessionEvidenceAssetDAOError as exc:
+            logger.error("No se pudo adjuntar la captura para la evidencia %s: %s", evidence_id, exc)
+            raise SessionServiceError(str(exc)) from exc
+
+        return asset
 
     def list_evidences(self) -> List[SessionEvidenceDTO]:
         """Return the evidences stored for the active session."""
@@ -345,6 +414,7 @@ class SessionService:
 
         if evidences:
             state.lastEvidenceAt = evidences[-1].createdAt
+            self._attach_assets_metadata(state.session.sessionId or 0, evidences)
         return evidences
 
     def get_session_with_evidences(
@@ -374,6 +444,7 @@ class SessionService:
         except SessionEvidenceDAOError as exc:
             logger.error("No fue posible consultar las evidencias de la sesión %s: %s", session_id, exc)
             raise SessionServiceError(str(exc)) from exc
+        self._attach_assets_metadata(session_id, evidences)
 
         return session, evidences
 
@@ -438,6 +509,18 @@ class SessionService:
             )
         except SessionEvidenceDAOError as exc:
             logger.error("No se pudo actualizar la evidencia %s: %s", evidence_id, exc)
+            raise SessionServiceError(str(exc)) from exc
+
+        try:
+            self._asset_dao.upsert_asset(
+                evidence_id,
+                0,
+                file_path.name,
+                str(file_path),
+                updated_at,
+            )
+        except SessionEvidenceAssetDAOError as exc:
+            logger.error("No se pudo actualizar la captura principal de la evidencia %s: %s", evidence_id, exc)
             raise SessionServiceError(str(exc)) from exc
 
         # Refresh local cache ordering
@@ -506,6 +589,13 @@ class SessionService:
                 description,
                 considerations,
                 observations,
+                updated_at,
+            )
+            self._asset_dao.upsert_asset(
+                evidence_id,
+                0,
+                file_path.name,
+                str(file_path),
                 updated_at,
             )
         except SessionEvidenceDAOError as exc:

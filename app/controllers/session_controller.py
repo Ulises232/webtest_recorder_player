@@ -134,6 +134,15 @@ class SessionController:
             return None, str(exc)
         return evidence, None
 
+    def add_evidence_shot(self, evidence_id: int, file_path: Path) -> Optional[str]:
+        """Attach an additional capture to an existing evidence."""
+
+        try:
+            self._session_service.attach_evidence_asset(evidence_id, file_path)
+        except SessionServiceError as exc:
+            return str(exc)
+        return None
+
     def list_session_evidences(self) -> Tuple[List[SessionEvidenceDTO], Optional[str]]:
         """Return the evidences recorded in the active session."""
 

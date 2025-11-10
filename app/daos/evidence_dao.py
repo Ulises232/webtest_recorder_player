@@ -145,6 +145,7 @@ class SessionEvidenceDAO:
             updatedAt=created_at,
             elapsedSinceSessionStartSeconds=elapsed_since_start,
             elapsedSincePreviousEvidenceSeconds=elapsed_since_previous,
+            assets=[],
         )
 
     def update_evidence(
@@ -229,6 +230,7 @@ class SessionEvidenceDAO:
                     updatedAt=updated_at,
                     elapsedSinceSessionStartSeconds=int(row[9] or 0),
                     elapsedSincePreviousEvidenceSeconds=(int(row[10]) if row[10] is not None else None),
+                    assets=[],
                 )
             )
         return evidences

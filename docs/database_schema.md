@@ -92,6 +92,21 @@ CREATE TABLE dbo.recorder_session_evidences (
 CREATE INDEX ix_recorder_session_evidences_session_created
     ON dbo.recorder_session_evidences (session_id, created_at ASC, evidence_id ASC);
 
+CREATE TABLE dbo.recorder_session_evidence_assets (
+    asset_id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    evidence_id INT NOT NULL,
+    file_name NVARCHAR(512) NOT NULL,
+    file_path NVARCHAR(2048) NOT NULL,
+    position INT NOT NULL DEFAULT 0,
+    created_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    updated_at DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT fk_recorder_evidence_assets FOREIGN KEY (evidence_id)
+        REFERENCES dbo.recorder_session_evidences(evidence_id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_recorder_evidence_assets_evidence
+    ON dbo.recorder_session_evidence_assets (evidence_id, position ASC, asset_id ASC);
+
 CREATE TABLE dbo.recorder_session_pauses (
     pause_id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
     session_id INT NOT NULL,

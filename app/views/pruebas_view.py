@@ -662,8 +662,14 @@ def build_pruebas_view(
         """Translate a persisted evidence to the in-memory representation."""
 
         shots: List[str] = []
+        for asset in sorted(evidence.assets or [], key=lambda item: item.position):
+            if asset.filePath:
+                shots.append(asset.filePath)
         if evidence.filePath:
-            shots.append(evidence.filePath)
+            if not shots:
+                shots.append(evidence.filePath)
+            elif evidence.filePath not in shots:
+                shots.insert(0, evidence.filePath)
         return {
             "id": evidence.evidenceId,
             "cmd": evidence.fileName or "Evidencia",
@@ -860,7 +866,7 @@ def build_pruebas_view(
     
     def _refresh_evidence_tree() -> None:
         """Render the evidence rows in the treeview widget."""
-    
+
         tree = evidence_tree_ref.get("tree")
         if not isinstance(tree, ttk.Treeview):
             return
@@ -877,6 +883,30 @@ def build_pruebas_view(
                 format_elapsed(step.get("elapsedSincePrevious")),
             )
             tree.insert("", "end", iid=str(idx - 1), values=values)
+
+    def _get_selected_step_index(show_warning: bool = True) -> Optional[int]:
+        """Return the index of the evidence currently selected in the grid."""
+
+        tree = evidence_tree_ref.get("tree")
+        if not isinstance(tree, ttk.Treeview):
+            return None
+        selection = tree.selection()
+        if not selection:
+            if show_warning:
+                Messagebox.showwarning("Evidencias", "Selecciona una evidencia para continuar.")
+            return None
+        try:
+            index = int(selection[0])
+        except ValueError:
+            if show_warning:
+                Messagebox.showwarning("Evidencias", "La evidencia seleccionada no es válida.")
+            return None
+        steps = session.get("steps", [])
+        if index < 0 or index >= len(steps):
+            if show_warning:
+                Messagebox.showwarning("Evidencias", "No se encontró la evidencia seleccionada.")
+            return None
+        return index
     
     def _ensure_session_active(show_warning: bool = True) -> bool:
         """Check that a session is active and optionally show a warning."""
@@ -1030,67 +1060,15 @@ def build_pruebas_view(
             pass
     
     def edit_selected_evidence() -> None:
-        """Open the capture editor for the selected evidence."""
-    
+        """Open the evidence details modal for the selected row."""
+
         if not _ensure_session_active(True):
             return
-        tree = evidence_tree_ref.get("tree")
-        if not isinstance(tree, ttk.Treeview):
+        index = _get_selected_step_index(True)
+        if index is None:
             return
-        selection = tree.selection()
-        if not selection:
-            Messagebox.showwarning("Evidencias", "Selecciona una evidencia para editarla.")
-            return
-        try:
-            index = int(selection[0])
-        except ValueError:
-            Messagebox.showwarning("Evidencias", "La evidencia seleccionada no es válida.")
-            return
-        if index < 0 or index >= len(session.get("steps", [])):
-            Messagebox.showwarning("Evidencias", "No se encontró la evidencia seleccionada.")
-            return
-    
-        step = session["steps"][index]
-        shots = step.get("shots") or []
-        if not shots:
-            Messagebox.showwarning("Evidencias", "La evidencia no tiene una imagen asociada.")
-            return
-    
-        image_path = Path(shots[0])
-        meta_in = {
-            "descripcion": step.get("desc", ""),
-            "consideraciones": step.get("consideraciones", ""),
-            "observaciones": step.get("observacion", ""),
-        }
-        try:
-            edited_path, meta_out = open_capture_editor_fn(str(image_path), meta_in)
-        except Exception as exc:
-            Messagebox.showerror("Editor", f"No fue posible abrir el editor: {exc}")
-            return
-    
-        new_path = Path(edited_path) if edited_path else image_path
-        shots[0] = str(new_path)
-        step["desc"] = meta_out.get("descripcion", "") or ""
-        step["consideraciones"] = meta_out.get("consideraciones", "") or ""
-        step["observacion"] = meta_out.get("observaciones", "") or ""
-    
-        evidence_id = step.get("id")
-        if evidence_id:
-            error = controller.sessions.update_session_evidence(
-                int(evidence_id),
-                new_path,
-                step.get("desc", ""),
-                step.get("consideraciones", ""),
-                step.get("observacion", ""),
-            )
-            if error:
-                Messagebox.showerror("Sesión", error)
-                return
-    
-        session_saved["val"] = False
-        _refresh_evidence_tree()
-        status.set("✏️ Evidencia actualizada.")
-    
+        _open_evidence_details_modal(index)
+
     session_card = tb.Labelframe(parent, text="Sesión de evidencias", bootstyle=SECONDARY, padding=12)
     session_card.pack(fill=BOTH, expand=YES, pady=(0,12))
     session_card.columnconfigure(0, weight=1)
@@ -1176,65 +1154,197 @@ def build_pruebas_view(
             idx = sel; _monitor_index["val"] = idx
         return monitors, idx
     
-    def snap_externo_monitor():
-        """Auto-generated docstring for `snap_externo_monitor`."""
-        if not _ensure_session_running():
+    def _persist_capture_result(
+        out_path: Path,
+        meta_desc: Dict[str, str],
+        cmd: str,
+        status_new: str,
+        status_extra: str,
+        target_step_index: Optional[int] = None,
+        inherit_primary_meta: bool = False,
+    ) -> None:
+        """Persist the capture either as a new evidence or as an attachment."""
+
+        desc_val = (meta_desc.get("descripcion") or "").strip()
+        cons_val = (meta_desc.get("consideraciones") or "").strip()
+        obs_val = (meta_desc.get("observacion") or "").strip()
+        shot_path = str(out_path)
+        base_desc = desc_val
+        base_cons = cons_val
+        base_obs = obs_val
+
+        if target_step_index is None:
+            step: Dict[str, object] = {"cmd": cmd, "shots": [shot_path]}
+            if desc_val:
+                step["desc"] = desc_val
+            if cons_val:
+                step["consideraciones"] = cons_val
+            if obs_val:
+                step["observacion"] = obs_val
+            session["steps"].append(step)
+            evidence, error = controller.sessions.register_session_evidence(
+                Path(step["shots"][0]),
+                step.get("desc", ""),
+                step.get("consideraciones", ""),
+                step.get("observacion", ""),
+            )
+            if error:
+                Messagebox.showerror("Sesión", error)
+                session["steps"].pop()
+                return
+            if evidence:
+                step["id"] = evidence.evidenceId
+                step["createdAt"] = evidence.createdAt
+                step["elapsedSinceStart"] = evidence.elapsedSinceSessionStartSeconds
+                step["elapsedSincePrevious"] = evidence.elapsedSincePreviousEvidenceSeconds
+            session_saved["val"] = False
+            _refresh_evidence_tree()
+            _schedule_timer_tick()
+            status.set(status_new)
             return
-        if not ensure_mss():
+
+        steps = session.get("steps", [])
+        if target_step_index < 0 or target_step_index >= len(steps):
+            Messagebox.showwarning("Evidencias", "No se encontró la evidencia seleccionada.")
             return
-        import mss, mss.tools
-        with mss.mss() as sct:
-            monitors, idx = select_monitor(sct)
-            if monitors is None: return
-            mon = monitors[idx]
-            evid_dir = Path(ev_var.get()); evid_dir.mkdir(parents=True, exist_ok=True)
-            ts = time.strftime("%Y%m%d_%H%M%S"); out_path = evid_dir / f"snap_ext_monitor{idx}_{ts}.png"
-            img = sct.grab(mon); mss.tools.to_png(img.rgb, img.size, output=str(out_path))
-    
-        # === ÚNICA ventana: Editor con vista previa + Descripción/Consideraciones/Observación ===
-        meta_desc = {"descripcion":"", "consideraciones":"", "observacion":""}
-        try:
-            meta_in = {
-                "descripcion": meta_desc.get("descripcion",""),
-                "consideraciones": meta_desc.get("consideraciones",""),
-                "observaciones": meta_desc.get("observacion",""),
-            }
-            edited_path, meta_out = open_capture_editor_fn(str(out_path), meta_in)
-            if edited_path and os.path.exists(edited_path):
-                out_path = Path(edited_path)
-            # Sincronizar claves con el formato del sistema (observacion en singular)
-            meta_desc["descripcion"]     = meta_out.get("descripcion","")
-            meta_desc["consideraciones"] = meta_out.get("consideraciones","")
-            meta_desc["observacion"]     = meta_out.get("observaciones","")
-        except Exception as e:
-            Messagebox.showwarning( "Editor",f"Editor no disponible: {e}")
-    
-        step = {"cmd": "snap_externo", "shots": [str(out_path)]}
-        if meta_desc["descripcion"]: step["desc"] = meta_desc["descripcion"]
-        if meta_desc["consideraciones"]: step["consideraciones"] = meta_desc["consideraciones"]
-        if meta_desc["observacion"]: step["observacion"] = meta_desc["observacion"]
-        session["steps"].append(step)
-        evidence, error = controller.sessions.register_session_evidence(
-            Path(step["shots"][0]),
+        step = steps[target_step_index]
+        evidence_id = step.get("id")
+        if not evidence_id:
+            Messagebox.showwarning(
+                "Evidencias",
+            "La evidencia aún no se ha guardado en la sesión. Captura una nueva antes de adjuntar imágenes.",
+            )
+            return
+        error = controller.sessions.add_evidence_shot(int(evidence_id), Path(shot_path))
+        if error:
+            Messagebox.showerror("Sesión", error)
+            return
+        shots_list = step.setdefault("shots", [])
+        shots_list.append(shot_path)
+        if inherit_primary_meta:
+            desc_val = step.get("desc", "")
+            cons_val = step.get("consideraciones", "")
+            obs_val = step.get("observacion", "")
+        else:
+            step["desc"] = base_desc
+            step["consideraciones"] = base_cons
+            step["observacion"] = base_obs
+        primary_path = shots_list[0] if shots_list else shot_path
+        error = controller.sessions.update_session_evidence(
+            int(evidence_id),
+            Path(primary_path),
             step.get("desc", ""),
             step.get("consideraciones", ""),
             step.get("observacion", ""),
         )
         if error:
             Messagebox.showerror("Sesión", error)
-        elif evidence:
-            step["id"] = evidence.evidenceId
-            step["createdAt"] = evidence.createdAt
-            step["elapsedSinceStart"] = evidence.elapsedSinceSessionStartSeconds
-            step["elapsedSincePrevious"] = evidence.elapsedSincePreviousEvidenceSeconds
+            return
         session_saved["val"] = False
         _refresh_evidence_tree()
         _schedule_timer_tick()
-        status.set(f"🖥️ SNAP externo agregado (monitor {idx})")
-    
-    
-    def snap_region_all():
-        """Auto-generated docstring for `snap_region_all`."""
+        status.set(status_extra)
+
+    def _open_capture_editor_for_shot(step_index: int, shot_index: int) -> None:
+        """Open the editor for a specific capture and persist changes."""
+
+        steps = session.get("steps", [])
+        if step_index < 0 or step_index >= len(steps):
+            Messagebox.showwarning("Evidencias", "No se encontró la evidencia solicitada.")
+            return
+        step = steps[step_index]
+        shots = step.get("shots") or []
+        if shot_index < 0 or shot_index >= len(shots):
+            Messagebox.showwarning("Evidencias", "La captura seleccionada no es válida.")
+            return
+        if shot_index != 0:
+            Messagebox.showinfo("Evidencias", "Por ahora solo se puede editar la captura principal.")
+            return
+
+        image_path = Path(shots[shot_index])
+        meta_in = {
+            "descripcion": step.get("desc", ""),
+            "consideraciones": step.get("consideraciones", ""),
+            "observaciones": step.get("observacion", ""),
+        }
+        try:
+            edited_path, meta_out = open_capture_editor_fn(str(image_path), meta_in)
+        except Exception as exc:
+            Messagebox.showerror("Editor", f"No fue posible abrir el editor: {exc}")
+            return
+
+        new_path = Path(edited_path) if edited_path else image_path
+        shots[shot_index] = str(new_path)
+        step["desc"] = meta_out.get("descripcion", "") or ""
+        step["consideraciones"] = meta_out.get("consideraciones", "") or ""
+        step["observacion"] = meta_out.get("observaciones", "") or ""
+
+        evidence_id = step.get("id")
+        if evidence_id:
+            error = controller.sessions.update_session_evidence(
+                int(evidence_id),
+                new_path,
+                step.get("desc", ""),
+                step.get("consideraciones", ""),
+                step.get("observacion", ""),
+            )
+            if error:
+                Messagebox.showerror("Sesión", error)
+                return
+
+        session_saved["val"] = False
+        _refresh_evidence_tree()
+        status.set("Evidencia actualizada.")
+
+    def snap_externo_monitor(target_step_index: Optional[int] = None) -> None:
+        """Capture the entire monitor or attach it to the selected evidence."""
+
+        if not _ensure_session_running():
+            return
+        if not ensure_mss():
+            return
+        import mss, mss.tools
+
+        with mss.mss() as sct:
+            monitors, idx = select_monitor(sct)
+            if monitors is None:
+                return
+            mon = monitors[idx]
+            evid_dir = Path(ev_var.get())
+            evid_dir.mkdir(parents=True, exist_ok=True)
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            out_path = evid_dir / f"snap_ext_monitor{idx}_{ts}.png"
+            img = sct.grab(mon)
+            mss.tools.to_png(img.rgb, img.size, output=str(out_path))
+
+        meta_desc = {"descripcion": "", "consideraciones": "", "observacion": ""}
+        try:
+            meta_in = {
+                "descripcion": meta_desc.get("descripcion", ""),
+                "consideraciones": meta_desc.get("consideraciones", ""),
+                "observaciones": meta_desc.get("observacion", ""),
+            }
+            edited_path, meta_out = open_capture_editor_fn(str(out_path), meta_in)
+            if edited_path and os.path.exists(edited_path):
+                out_path = Path(edited_path)
+            meta_desc["descripcion"] = meta_out.get("descripcion", "")
+            meta_desc["consideraciones"] = meta_out.get("consideraciones", "")
+            meta_desc["observacion"] = meta_out.get("observaciones", "")
+        except Exception as exc:
+            Messagebox.showwarning("Editor", f"Editor no disponible: {exc}")
+
+        _persist_capture_result(
+            Path(out_path),
+            meta_desc,
+            "snap_externo",
+            f"[SNAP] Captura externa guardada (monitor {idx}).",
+            "[SNAP] Captura externa adicional agregada a la evidencia seleccionada.",
+            target_step_index,
+            inherit_primary_meta=bool(target_step_index is not None),
+        )
+
+    def snap_region_all(target_step_index: Optional[int] = None) -> None:
+        """Capture a region of the desktop or attach it to an existing evidence."""
         if not _ensure_session_running():
             return
         if not ensure_mss():
@@ -1244,54 +1354,177 @@ def build_pruebas_view(
             desktop = sct.monitors[0]
             bbox = select_region_overlay(root, desktop)
             if not bbox:
-                status.set("Selección cancelada."); return
-    
+                status.set("Seleccion cancelada.")
+                return
+
             left, top, width, height = bbox
             region = {"left": int(left), "top": int(top), "width": int(width), "height": int(height)}
-            evid_dir = Path(ev_var.get()); evid_dir.mkdir(parents=True, exist_ok=True)
-            ts = time.strftime("%Y%m%d_%H%M%S"); out_path = evid_dir / f"snap_region_all_{ts}.png"
-            img = sct.grab(region); mss.tools.to_png(img.rgb, img.size, output=str(out_path))
-    
-        # === ÚNICA ventana: Editor con vista previa + Descripción/Consideraciones/Observación ===
-        meta_desc = {"descripcion":"", "consideraciones":"", "observacion":""}
+            evid_dir = Path(ev_var.get())
+            evid_dir.mkdir(parents=True, exist_ok=True)
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            out_path = evid_dir / f"snap_region_all_{ts}.png"
+            img = sct.grab(region)
+            mss.tools.to_png(img.rgb, img.size, output=str(out_path))
+
+        meta_desc = {"descripcion": "", "consideraciones": "", "observacion": ""}
         try:
             meta_in = {
-                "descripcion": meta_desc.get("descripcion",""),
-                "consideraciones": meta_desc.get("consideraciones",""),
-                "observaciones": meta_desc.get("observacion",""),
+                "descripcion": meta_desc.get("descripcion", ""),
+                "consideraciones": meta_desc.get("consideraciones", ""),
+                "observaciones": meta_desc.get("observacion", ""),
             }
             edited_path, meta_out = open_capture_editor_fn(str(out_path), meta_in)
             if edited_path and os.path.exists(edited_path):
                 out_path = Path(edited_path)
-            meta_desc["descripcion"]     = meta_out.get("descripcion","")
-            meta_desc["consideraciones"] = meta_out.get("consideraciones","")
-            meta_desc["observacion"]     = meta_out.get("observaciones","")
-        except Exception as e:
-            Messagebox.showwarning("Editor", f"Editor no disponible: {e}")
-    
-        step = {"cmd": "snap_region_all", "shots": [str(out_path)]}
-        if meta_desc["descripcion"]: step["desc"] = meta_desc["descripcion"]
-        if meta_desc["consideraciones"]: step["consideraciones"] = meta_desc["consideraciones"]
-        if meta_desc["observacion"]: step["observacion"] = meta_desc["observacion"]
-        session["steps"].append(step)
-        evidence, error = controller.sessions.register_session_evidence(
-            Path(step["shots"][0]),
-            step.get("desc", ""),
-            step.get("consideraciones", ""),
-            step.get("observacion", ""),
+            meta_desc["descripcion"] = meta_out.get("descripcion", "")
+            meta_desc["consideraciones"] = meta_out.get("consideraciones", "")
+            meta_desc["observacion"] = meta_out.get("observaciones", "")
+        except Exception as exc:
+            Messagebox.showwarning("Editor", f"Editor no disponible: {exc}")
+
+        _persist_capture_result(
+            Path(out_path),
+            meta_desc,
+            "snap_region_all",
+            "[SNAP] Captura de region guardada.",
+            "[SNAP] Captura de region agregada a la evidencia seleccionada.",
+            target_step_index,
+            inherit_primary_meta=bool(target_step_index is not None),
         )
-        if error:
-            Messagebox.showerror("Sesión", error)
-        elif evidence:
-            step["id"] = evidence.evidenceId
-            step["createdAt"] = evidence.createdAt
-            step["elapsedSinceStart"] = evidence.elapsedSinceSessionStartSeconds
-            step["elapsedSincePrevious"] = evidence.elapsedSincePreviousEvidenceSeconds
-        session_saved["val"] = False
-        _refresh_evidence_tree()
-        _schedule_timer_tick()
-        status.set("📐 SNAP región (todas) agregado")
-    
+
+    def _open_evidence_details_modal(step_index: int) -> None:
+        """Display a modal that manages the captures linked to a step."""
+
+        steps = session.get("steps", [])
+        if step_index < 0 or step_index >= len(steps):
+            Messagebox.showwarning("Evidencias", "No se encontró la evidencia seleccionada.")
+            return
+        step = steps[step_index]
+        win = tb.Toplevel(root)
+        win.title(f"Evidencia #{step_index + 1}")
+        win.transient(root)
+        win.grab_set()
+        container = tb.Frame(win, padding=16)
+        container.pack(fill=BOTH, expand=YES)
+
+        meta_frame = tb.Frame(container)
+        meta_frame.pack(fill=X, pady=(0, 12))
+        tb.Label(
+            meta_frame,
+            text=step.get("desc", "") or "Sin descripción",
+            font=("Segoe UI", 11, "bold"),
+            wraplength=520,
+            justify="left",
+        ).pack(anchor=W)
+        tb.Label(
+            meta_frame,
+            text=f"Consideraciones: {step.get('consideraciones', '') or '-'}",
+            wraplength=520,
+            justify="left",
+        ).pack(anchor=W, pady=(6, 0))
+        tb.Label(
+            meta_frame,
+            text=f"Observación: {step.get('observacion', '') or '-'}",
+            wraplength=520,
+            justify="left",
+        ).pack(anchor=W, pady=(2, 0))
+
+        shots_frame = tb.Labelframe(container, text="Capturas asociadas", padding=12)
+        shots_frame.pack(fill=BOTH, expand=YES)
+
+        shots_list = tk.Listbox(shots_frame, height=8)
+        shots_list.pack(fill=BOTH, expand=YES, side=LEFT)
+        preview_var = tk.StringVar(value="Selecciona una captura para consultar su ruta.")
+        tb.Label(shots_frame, textvariable=preview_var, wraplength=260, justify="left").pack(
+            side=LEFT, padx=(12, 0), fill=BOTH, expand=YES
+        )
+
+        def _refresh_shots_list() -> None:
+            shots_list.delete(0, tk.END)
+            for idx, shot_path in enumerate(step.get("shots", [])):
+                label = os.path.basename(shot_path) or f"captura_{idx + 1}.png"
+                shots_list.insert(tk.END, f"{idx + 1}. {label}")
+            if shots_list.size():
+                shots_list.selection_set(0)
+                _update_preview()
+            else:
+                preview_var.set("La evidencia no tiene capturas registradas.")
+
+        def _get_selection_index() -> Optional[int]:
+            try:
+                idx = int(shots_list.curselection()[0])
+            except (IndexError, ValueError):
+                return None
+            return idx
+
+        def _update_preview(*_args: object) -> None:
+            idx = _get_selection_index()
+            if idx is None:
+                preview_var.set("Selecciona una captura para consultar su ruta.")
+                return
+            shots = step.get("shots", [])
+            if idx >= len(shots):
+                preview_var.set("No se encontró la captura solicitada.")
+                return
+            preview_var.set(shots[idx] or "(sin archivo)")
+
+        def _open_selected_image() -> None:
+            idx = _get_selection_index()
+            if idx is None:
+                Messagebox.showwarning("Evidencias", "Selecciona una captura para abrirla.")
+                return
+            shots = step.get("shots", [])
+            if idx >= len(shots):
+                Messagebox.showwarning("Evidencias", "No se encontró la captura seleccionada.")
+                return
+            path = shots[idx]
+            if not path:
+                Messagebox.showwarning("Evidencias", "La captura seleccionada no tiene un archivo asociado.")
+                return
+            try:
+                os.startfile(path)  # type: ignore[attr-defined]
+            except Exception as exc:
+                Messagebox.showerror("Evidencias", f"No fue posible abrir la imagen: {exc}")
+
+        def _edit_primary_capture() -> None:
+            _open_capture_editor_for_shot(step_index, 0)
+            _refresh_shots_list()
+
+        def _capture_extra_monitor() -> None:
+            snap_externo_monitor(target_step_index=step_index)
+            _refresh_evidence_tree()
+            _refresh_shots_list()
+
+        def _capture_extra_region() -> None:
+            snap_region_all(target_step_index=step_index)
+            _refresh_evidence_tree()
+            _refresh_shots_list()
+
+        shots_list.bind("<<ListboxSelect>>", _update_preview, add="+")
+        _refresh_shots_list()
+
+        buttons = tb.Frame(container)
+        buttons.pack(fill=X, pady=(12, 0))
+        tb.Button(buttons, text="Editar captura principal", command=_edit_primary_capture, bootstyle=PRIMARY).pack(
+            side=LEFT
+        )
+        tb.Button(
+            buttons,
+            text="Snap monitor extra",
+            command=_capture_extra_monitor,
+            bootstyle=INFO,
+        ).pack(side=LEFT, padx=8)
+        tb.Button(
+            buttons,
+            text="Snap región extra",
+            command=_capture_extra_region,
+            bootstyle=INFO,
+        ).pack(side=LEFT, padx=8)
+        tb.Button(buttons, text="Abrir imagen seleccionada", command=_open_selected_image, bootstyle=SECONDARY).pack(
+            side=LEFT, padx=8
+        )
+        tb.Button(buttons, text="Cerrar", command=win.destroy, bootstyle=SECONDARY).pack(side=RIGHT)
+
     def generar_doc():
         """Auto-generated docstring for `generar_doc`."""
         if not session["steps"]:

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 
 @dataclass
@@ -40,6 +40,20 @@ class SessionEvidenceDTO:
     updatedAt: datetime
     elapsedSinceSessionStartSeconds: int
     elapsedSincePreviousEvidenceSeconds: Optional[int]
+    assets: List["SessionEvidenceAssetDTO"] = field(default_factory=list)
+
+
+@dataclass
+class SessionEvidenceAssetDTO:
+    """Represent an additional capture linked to an evidence."""
+
+    assetId: Optional[int]
+    evidenceId: int
+    fileName: str
+    filePath: str
+    position: int
+    createdAt: datetime
+    updatedAt: datetime
 
 
 @dataclass
