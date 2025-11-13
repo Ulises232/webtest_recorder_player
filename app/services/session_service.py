@@ -65,6 +65,23 @@ class SessionService:
 
         return datetime.now(timezone.utc).replace(microsecond=0)
 
+    @staticmethod
+    def _ensure_utc_timestamp(value: Optional[datetime]) -> Optional[datetime]:
+        """Normalize persisted timestamps to timezone-aware UTC values.
+
+        Args:
+            value: Datetime retrieved from storage that may lack tzinfo.
+
+        Returns:
+            The same datetime marked as UTC or None when no value was provided.
+        """
+
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
     def _attach_assets_metadata(self, session_id: int, evidences: List[SessionEvidenceDTO]) -> None:
         """Populate the assets collection for the provided evidences."""
 
@@ -336,11 +353,13 @@ class SessionService:
 
         now = self._utcnow()
         elapsed_since_start = self.get_elapsed_seconds()
+        last_evidence_at = self._ensure_utc_timestamp(state.lastEvidenceAt)
+        state.lastEvidenceAt = last_evidence_at
         elapsed_since_previous: Optional[int]
-        if state.lastEvidenceAt is None:
+        if last_evidence_at is None:
             elapsed_since_previous = elapsed_since_start
         else:
-            elapsed_since_previous = max(0, int((now - state.lastEvidenceAt).total_seconds()))
+            elapsed_since_previous = max(0, int((now - last_evidence_at).total_seconds()))
 
         file_name = file_path.name
         try:
@@ -413,7 +432,7 @@ class SessionService:
             raise SessionServiceError(str(exc)) from exc
 
         if evidences:
-            state.lastEvidenceAt = evidences[-1].createdAt
+            state.lastEvidenceAt = self._ensure_utc_timestamp(evidences[-1].createdAt)
             self._attach_assets_metadata(state.session.sessionId or 0, evidences)
         return evidences
 
@@ -459,7 +478,7 @@ class SessionService:
         if self._active_state and self._active_state.session.sessionId != session_id:
             raise SessionServiceError("Finaliza la sesión activa antes de editar otra desde el tablero.")
 
-        last_evidence_at = evidences[-1].createdAt if evidences else None
+        last_evidence_at = self._ensure_utc_timestamp(evidences[-1].createdAt if evidences else None)
         elapsed_seconds = session.durationSeconds or 0
 
         if self._active_state and self._active_state.session.sessionId == session_id:
@@ -526,7 +545,7 @@ class SessionService:
         # Refresh local cache ordering
         evidences = self.list_evidences()
         if evidences:
-            state.lastEvidenceAt = evidences[-1].createdAt
+            state.lastEvidenceAt = self._ensure_utc_timestamp(evidences[-1].createdAt)
 
     def finalize_session(self) -> SessionDTO:
         """Close the active session and persist the duration."""
@@ -613,4 +632,4 @@ class SessionService:
                 )
                 return
             if evidences:
-                self._active_state.lastEvidenceAt = evidences[-1].createdAt
+                self._active_state.lastEvidenceAt = self._ensure_utc_timestamp(evidences[-1].createdAt)

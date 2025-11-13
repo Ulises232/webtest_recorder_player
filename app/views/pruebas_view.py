@@ -1450,6 +1450,28 @@ def build_pruebas_view(
             else:
                 preview_var.set("La evidencia no tiene capturas registradas.")
 
+        def _run_capture_with_modal_release(action: Callable[[], None]) -> None:
+            """Execute an action freeing the modal grab so overlays can receive input."""
+
+            has_grab = False
+            try:
+                has_grab = win.grab_current() is win
+            except Exception:
+                has_grab = False
+            if has_grab:
+                try:
+                    win.grab_release()
+                except Exception:
+                    has_grab = False
+            try:
+                action()
+            finally:
+                if has_grab and win.winfo_exists():
+                    try:
+                        win.grab_set()
+                    except Exception:
+                        pass
+
         def _get_selection_index() -> Optional[int]:
             try:
                 idx = int(shots_list.curselection()[0])
@@ -1491,14 +1513,28 @@ def build_pruebas_view(
             _refresh_shots_list()
 
         def _capture_extra_monitor() -> None:
-            snap_externo_monitor(target_step_index=step_index)
-            _refresh_evidence_tree()
-            _refresh_shots_list()
+            """Capture an additional monitor screenshot for the selected evidence."""
+
+            def _action() -> None:
+                """Run the extra monitor capture workflow."""
+
+                snap_externo_monitor(target_step_index=step_index)
+                _refresh_evidence_tree()
+                _refresh_shots_list()
+
+            _run_capture_with_modal_release(_action)
 
         def _capture_extra_region() -> None:
-            snap_region_all(target_step_index=step_index)
-            _refresh_evidence_tree()
-            _refresh_shots_list()
+            """Capture an extra region screenshot for the selected evidence."""
+
+            def _action() -> None:
+                """Run the extra region capture workflow."""
+
+                snap_region_all(target_step_index=step_index)
+                _refresh_evidence_tree()
+                _refresh_shots_list()
+
+            _run_capture_with_modal_release(_action)
 
         shots_list.bind("<<ListboxSelect>>", _update_preview, add="+")
         _refresh_shots_list()
