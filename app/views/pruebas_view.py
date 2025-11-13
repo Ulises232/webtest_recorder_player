@@ -589,7 +589,9 @@ def build_pruebas_view(
         if session_state["active"]:
             Messagebox.showwarning("Sesión", "Termina la sesión activa antes de iniciar otra.")
             return
-        card_base = controller.naming.slugify_for_windows(card.title or card.ticketId or f"card-{card.cardId}") or f"card-{card.cardId}"
+        ticket_slug = controller.naming.slugify_for_windows(card.ticketId or "")
+        fallback_slug = controller.naming.slugify_for_windows(f"card-{card.cardId}")
+        card_base = ticket_slug or fallback_slug or f"card-{card.cardId}"
         previous_auto_state = auto_paths_state.get("enabled", True)
         auto_paths_state["enabled"] = True
         try:
